@@ -17,6 +17,7 @@ import java.util.List;
  * </p>
  *
  * @author 虎哥
+ * @since 2021-12-22
  */
 @RestController
 @RequestMapping("/shop-type")
@@ -24,10 +25,9 @@ public class ShopTypeController {
     @Resource
     private IShopTypeService typeService;
 
-    @GetMapping("list")
+    @GetMapping("/list")
     public Result queryTypeList() {
-        List<ShopType> typeList = typeService
-                .query().orderByAsc("sort").list();
+        List<ShopType> typeList = typeService.queryTypeList();
         return Result.ok(typeList);
     }
 }

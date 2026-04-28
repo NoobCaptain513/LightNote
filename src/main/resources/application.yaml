@@ -4,12 +4,15 @@ spring:
   application:
     name: hmdp
   datasource:
-    driver-class-name: com.mysql.jdbc.Driver
+    driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
     username: root
-    password: 123
+    password: 123456
   redis:
-    host: 192.168.150.101
+    cluster:
+      refresh:
+        adaptive-refresh: false
+    host: 192.168.100.132
     port: 6379
     password: 123321
     lettuce:
@@ -25,5 +28,9 @@ mybatis-plus:
 logging:
   level:
     com.hmdp: debug
-  pattern:
-    dateformat: mm:ss.SSS
+
+# AI服务配置
+ai:
+  api-key: sk-b0e58e9d0ea3442481f7897adc849fdf
+  model: qwen-max
+  api-url: https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation

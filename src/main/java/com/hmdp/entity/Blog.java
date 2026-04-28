@@ -57,6 +57,12 @@ public class Blog implements Serializable {
     private Boolean isLike;
 
     /**
+     * 推荐分数
+     */
+    @TableField(exist = false)
+    private Double score;
+
+    /**
      * 标题
      */
     private String title;

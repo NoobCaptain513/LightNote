@@ -8,6 +8,9 @@ public class RedisConstants {
 
     public static final Long CACHE_NULL_TTL = 2L;
 
+    public static final String CACHE_SHOP_TYPE_KEY = "cache:shop:type:";
+    public static final Long CACHE_SHOP_TYPE_TTL = 3600L;
+
     public static final Long CACHE_SHOP_TTL = 30L;
     public static final String CACHE_SHOP_KEY = "cache:shop:";
 
@@ -19,4 +22,10 @@ public class RedisConstants {
     public static final String FEED_KEY = "feed:";
     public static final String SHOP_GEO_KEY = "shop:geo:";
     public static final String USER_SIGN_KEY = "sign:";
+
+    // 好友相关
+    public static final String USER_FOLLOW_KEY = "user:follow:";
+    public static final String USER_CHAT_UNREAD_KEY = "chat:unread:";
+
+
 }

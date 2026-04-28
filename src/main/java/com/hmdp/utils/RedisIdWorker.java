@@ -8,7 +8,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
 @Component
-public class RedisIdWorker {
+public class  RedisIdWorker {
     /**
      * 开始时间戳
      */
@@ -24,6 +24,7 @@ public class RedisIdWorker {
         this.stringRedisTemplate = stringRedisTemplate;
     }
 
+    // 生成唯一id
     public long nextId(String keyPrefix) {
         // 1.生成时间戳
         LocalDateTime now = LocalDateTime.now();

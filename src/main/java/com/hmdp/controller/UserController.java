@@ -22,6 +22,7 @@ import javax.servlet.http.HttpSession;
  * </p>
  *
  * @author 虎哥
+ * @since 2021-12-22
  */
 @Slf4j
 @RestController
@@ -34,13 +35,14 @@ public class UserController {
     @Resource
     private IUserInfoService userInfoService;
 
+
     /**
      * 发送手机验证码
      */
     @PostMapping("code")
-    public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
-        // 发送短信验证码并保存验证码
-        return userService.sendCode(phone, session);
+    public Result sendCode(@RequestParam("phone") String phone) {
+        //发送短信验证码并保存验证码
+        return userService.sendCode(phone);
     }
 
     /**
@@ -48,9 +50,9 @@ public class UserController {
      * @param loginForm 登录参数，包含手机号、验证码；或者手机号、密码
      */
     @PostMapping("/login")
-    public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session){
-        // 实现登录功能
-        return userService.login(loginForm, session);
+    public Result login(@RequestBody LoginFormDTO loginForm){
+        //实现登录功能
+        return userService.login(loginForm);
     }
 
     /**
@@ -83,7 +85,6 @@ public class UserController {
         // 返回
         return Result.ok(info);
     }
-
     @GetMapping("/{id}")
     public Result queryUserById(@PathVariable("id") Long userId){
         // 查询详情

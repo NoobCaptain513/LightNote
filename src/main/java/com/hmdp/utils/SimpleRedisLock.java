@@ -45,6 +45,8 @@ public class SimpleRedisLock implements ILock {
                 Collections.singletonList(KEY_PREFIX + name),
                 ID_PREFIX + Thread.currentThread().getId());
     }
+
+
     /*@Override
     public void unlock() {
         // 获取线程标示
