@@ -5,6 +5,38 @@ import lombok.Data;
 @Data
 public class UserDTO {
     private Long id;
-    private String nickname;
+    private String nickName;
     private String icon;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getNickName() {
+        return nickName;
+    }
+
+    public void setNickName(String nickName) {
+        this.nickName = nickName;
+    }
+
+    public String getNickname() {
+        return nickName;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickName = nickname;
+    }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
 }

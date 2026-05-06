@@ -1,14 +1,9 @@
 package com.lightnote.controller;
 
-
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lightnote.dto.Result;
 import com.lightnote.dto.UserDTO;
 import com.lightnote.entity.Blog;
-import com.lightnote.entity.User;
 import com.lightnote.service.IBlogService;
-import com.lightnote.service.IUserService;
-import com.lightnote.utils.SystemConstants;
 import com.lightnote.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,19 +37,16 @@ public class BlogController {
 
     @GetMapping("/of/me")
     public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
-        // 获取登录用户
         UserDTO user = UserHolder.getUser();
-        // 根据用户查询
-        Page<Blog> page = blogService.query()
-                .eq("user_id", user.getId()).page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
-        // 获取当前页数据
-        List<Blog> records = page.getRecords();
+        List<Blog> records = blogService.query()
+                .eq("user_id", user.getId())
+                .orderByDesc("create_time")
+                .list();
         return Result.ok(records);
     }
 
     @GetMapping("/hot")
     public Result queryHotBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
-
         return blogService.queryHotBlog(current);
     }
 
@@ -72,18 +64,17 @@ public class BlogController {
     public Result queryBlogByUserId(
             @RequestParam(value = "current", defaultValue = "1") Integer current,
             @RequestParam("id") Long id) {
-        // 根据用户查询
-        Page<Blog> page = blogService.query()
-                .eq("user_id", id).page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
-        // 获取当前页数据
-        List<Blog> records = page.getRecords();
+        List<Blog> records = blogService.query()
+                .eq("user_id", id)
+                .orderByDesc("create_time")
+                .list();
         return Result.ok(records);
     }
 
-
     @GetMapping("/of/follow")
     public Result queryBlogOfFollow(
-            @RequestParam("lastId") Long max, @RequestParam(value = "offset", defaultValue = "0") Integer offset){
+            @RequestParam("lastId") Long max,
+            @RequestParam(value = "offset", defaultValue = "0") Integer offset) {
         return blogService.queryBlogOfFollow(max, offset);
     }
 }

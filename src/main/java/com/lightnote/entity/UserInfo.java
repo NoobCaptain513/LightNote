@@ -1,6 +1,7 @@
 package com.lightnote.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -67,6 +68,15 @@ public class UserInfo implements Serializable {
      * 积分
      */
     private Integer credits;
+
+    @TableField(exist = false)
+    private Integer following;
+
+    @TableField(exist = false)
+    private Integer followers;
+
+    @TableField(exist = false)
+    private Integer liked;
 
     /**
      * 会员级别，0~9级,0代表未开通会员

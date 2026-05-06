@@ -181,9 +181,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         //1.获取当前用户
         Long userId = UserHolder.getUser().getId();
         String key = "feed:" + userId;
-        //2.查询收件箱，不分页，返回所有
+        //2.查询收件箱，使用offset分页
         Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeByScoreWithScores(key, 0, max);
+                .reverseRangeByScoreWithScores(key, 0, max, offset.longValue(), SystemConstants.DEFAULT_PAGE_SIZE);
         //3.解析数据
         if (typedTuples == null || typedTuples.isEmpty()) {
             ScrollResult emptyResult = new ScrollResult();
