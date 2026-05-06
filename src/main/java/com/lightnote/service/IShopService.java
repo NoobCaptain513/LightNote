@@ -1,0 +1,18 @@
+package com.lightnote.service;
+
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.lightnote.dto.Result;
+import com.lightnote.entity.Shop;
+
+public interface IShopService extends IService<Shop> {
+
+    Result queryById(Long id);
+
+    Result saveShop(Shop shop);
+
+    Result update(Shop shop);
+
+    Result queryShopByType(Integer typeId, Integer current, Double x, Double y);
+
+    Result queryShopByName(String name, Integer current);
+}

@@ -266,7 +266,7 @@ hm-dianping
 │       └── usage
 ├── src/main/resources
 │   ├── application.yaml
-│   └── db/hmdp.sql
+│   └── db/lightnote.sql
 └── docs
 ```
 
@@ -382,7 +382,7 @@ CREATE DATABASE hmdp DEFAULT CHARACTER SET utf8mb4;
 
 然后执行：
 
-- `src/main/resources/db/hmdp.sql`
+- `src/main/resources/db/lightnote.sql`
 
 ### 8.3 配置说明
 
@@ -409,7 +409,7 @@ ai:
 
 启动入口：
 
-- `com.hmdp.HmDianPingApplication`
+- `com.lightnote.HmDianPingApplication`
 
 命令行启动：
 
