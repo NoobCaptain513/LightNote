@@ -19,9 +19,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import javax.annotation.PostConstruct;
-import javax.annotation.Resource;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import jakarta.annotation.Resource;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -66,9 +66,28 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private final BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 1024);
 
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
+
+    private volatile boolean running = true;
     @PostConstruct
     private void init() {
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
+    }
+
+    @PreDestroy
+    public void destroy() {
+        log.info("正在关闭秒杀订单处理线程...");
+        running = false;
+        SECKILL_ORDER_EXECUTOR.shutdown();
+        try {
+            if (!SECKILL_ORDER_EXECUTOR.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                SECKILL_ORDER_EXECUTOR.shutdownNow();
+                log.warn("强制关闭秒杀订单处理线程");
+            }
+            log.info("秒杀订单处理线程已关闭");
+        } catch (InterruptedException e) {
+            SECKILL_ORDER_EXECUTOR.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private class VoucherOrderHandler implements Runnable{
@@ -76,7 +95,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         @Override
         public void run() {
-            while(true) {
+            while(running) {
                 try {
                     //1.获取消息队列中的订单信息
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
@@ -98,15 +117,16 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     //5 ack确认
                     stringRedisTemplate.opsForStream().acknowledge(queueName,"g1",record.getId());
                 } catch (Exception e) {
-                    log.error("处理订单异常",e);
-                    handlePendingList();
+                    if (running) {
+                        log.error("处理订单异常",e);
+                        handlePendingList();
+                    }
                 }
-
             }
         }
 
         private void handlePendingList() {
-            while(true) {
+            while(running) {
                 try {
                     //1.获取消息队列中的订单信息
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(

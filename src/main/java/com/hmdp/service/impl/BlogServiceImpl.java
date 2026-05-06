@@ -22,7 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,8 +43,6 @@ import static com.hmdp.utils.RedisConstants.BLOG_LIKED_KEY;
 public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IBlogService {
 
     @Resource
-    private IBlogService blogService;
-    @Resource
     private IUserService userService;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
@@ -54,7 +52,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Override
     public Result queryBlogById(Long id) {
         // 查询blog
-        Blog blog = blogService.getById(id);
+        Blog blog = this.getById(id);
         if (blog == null) {
             return Result.fail("笔记不存在！");
         }
@@ -89,7 +87,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Override
     public Result queryHotBlog(Integer current) {
         // 根据用户查询
-        Page<Blog> page = blogService.query()
+        Page<Blog> page = this.query()
                 .orderByDesc("liked")
                 .page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
         // 获取当前页数据
@@ -174,6 +172,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             String key = "feed:" + userId;
             stringRedisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());
         }
+
         return Result.ok(blog.getId());
     }
 
@@ -182,9 +181,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         //1.获取当前用户
         Long userId = UserHolder.getUser().getId();
         String key = "feed:" + userId;
-        //2.查询收件箱
+        //2.查询收件箱，不分页，返回所有
         Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeByScoreWithScores(key,0,max,offset,2);
+                .reverseRangeByScoreWithScores(key, 0, max);
         //3.解析数据
         if (typedTuples == null || typedTuples.isEmpty()) {
             ScrollResult emptyResult = new ScrollResult();
@@ -195,18 +194,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         }
         List<Long> ids = new ArrayList<>(typedTuples.size());
         long minTime = 0;
-        int os = 1;
+        int os = 0;
         for (ZSetOperations.TypedTuple<String> tuple : typedTuples){
             ids.add(Long.valueOf(tuple.getValue()));
-            //获取分数
             long time = tuple.getScore().longValue();
             if (time == minTime){
-                os = offset;
+                os++;
             }else {
                 minTime = time;
                 os = 1;
             }
-
         }
 
         //4.根据id查询blog

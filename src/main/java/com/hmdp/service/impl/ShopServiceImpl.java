@@ -24,7 +24,7 @@ import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -241,7 +241,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         GeoResults<RedisGeoCommands.GeoLocation<String>> results = stringRedisTemplate.opsForGeo().search(
                 key,
                 GeoReference.fromCoordinate(x, y),
-                new Distance(5000),
+                new Distance(10000),
                 RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(end)
         );
         if (results == null){

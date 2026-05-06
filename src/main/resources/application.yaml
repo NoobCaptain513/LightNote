@@ -1,11 +1,16 @@
 server:
   port: 8081
+
 spring:
   application:
     name: hmdp
+  http:
+    client:
+      read-timeout: 120s
+      connect-timeout: 30s
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8
     username: root
     password: 123456
   redis:
@@ -22,15 +27,33 @@ spring:
         min-idle: 1
         time-between-eviction-runs: 10s
   jackson:
-    default-property-inclusion: non_null # JSON处理时忽略非空字段
+    default-property-inclusion: non_null
+  ai:
+    dashscope:
+      api-key: sk-b0e58e9d0ea3442481f7897adc849fdf
+
 mybatis-plus:
-  type-aliases-package: com.hmdp.entity # 别名扫描包
+  type-aliases-package: com.hmdp.entity
+
 logging:
   level:
     com.hmdp: debug
 
-# AI服务配置
 ai:
+  provider:
+    type: langchain4j
   api-key: sk-b0e58e9d0ea3442481f7897adc849fdf
   model: qwen-max
-  api-url: https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation
+  compatible-base-url: https://dashscope.aliyuncs.com/compatible-mode
+  base-url: https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation
+  features:
+    rag:
+      top-k: 3
+      vector-dimension: 64
+      auto-rebuild-on-empty: true
+    stream:
+      chunk-size: 8
+      chunk-delay-ms: 35
+    cost:
+      input-price-per-1k: 0.02
+      output-price-per-1k: 0.06

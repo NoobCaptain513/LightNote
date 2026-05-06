@@ -19,7 +19,7 @@ import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSession;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -153,15 +153,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             //没有任何签到结果
             return Result.ok(0);
         }
-        //6. 遍历
+        //6. 从今天往前遍历，统计连续签到天数
         int count = 0;
-        while (true){
-            if ((num & 1) == 0){
-                break;
-            }else {
+        for (int i = dayOfMonth - 1; i >= 0; i--) {
+            if ((num & (1L << i)) != 0) {
                 count++;
+            } else {
+                break;
             }
-            num = num >> 1;
         }
         return Result.ok(count);
     }

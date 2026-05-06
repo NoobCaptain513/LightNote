@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.stream.Collectors;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +49,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, Message> impl
             return Result.fail("用户未登录");
         }
         Long fromUserId = user.getId();
-
 
         Conversation conversation = conversationService.getOrCreateConversation(fromUserId, toUserId);
 

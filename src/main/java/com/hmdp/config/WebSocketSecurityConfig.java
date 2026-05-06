@@ -14,7 +14,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -33,7 +33,7 @@ public class WebSocketSecurityConfig implements WebSocketMessageBrokerConfigurer
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/api/ws/chat")
-                .setAllowedOrigins("*")  // 改用 Patterns 更兼容
+                .setAllowedOriginPatterns("*")
                 .addInterceptors(authInterceptor)
                 .withSockJS();
     }

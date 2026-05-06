@@ -1281,4 +1281,56 @@ CREATE TABLE `tb_voucher_order`  (
 -- Records of tb_voucher_order
 -- ----------------------------
 
+-- ----------------------------
+-- Table structure for tb_ai_message
+-- ----------------------------
+DROP TABLE IF EXISTS `tb_ai_message`;
+CREATE TABLE `tb_ai_message`  (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) NOT NULL COMMENT '用户ID',
+  `role` varchar(20) NOT NULL COMMENT 'user 或 assistant',
+  `content` longtext NOT NULL COMMENT '消息内容',
+  `create_time` datetime NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for tb_ai_knowledge
+-- ----------------------------
+DROP TABLE IF EXISTS `tb_ai_knowledge`;
+CREATE TABLE `tb_ai_knowledge`  (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `title` varchar(255) NOT NULL COMMENT '知识标题',
+  `content` longtext NOT NULL COMMENT '知识正文',
+  `source_type` varchar(32) DEFAULT NULL COMMENT '来源类型，例如 shop',
+  `source_id` bigint(20) DEFAULT NULL COMMENT '来源业务ID',
+  `embedding` longtext NOT NULL COMMENT '向量JSON',
+  `score` decimal(10,4) DEFAULT NULL COMMENT '检索打分缓存，可为空',
+  `create_time` datetime NOT NULL COMMENT '创建时间',
+  `update_time` datetime NOT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for tb_ai_usage_log
+-- ----------------------------
+DROP TABLE IF EXISTS `tb_ai_usage_log`;
+CREATE TABLE `tb_ai_usage_log`  (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) DEFAULT NULL COMMENT '用户ID',
+  `provider_type` varchar(32) NOT NULL COMMENT 'provider 类型',
+  `model_name` varchar(64) NOT NULL COMMENT '模型名',
+  `biz_mode` varchar(32) NOT NULL COMMENT 'chat / agent',
+  `prompt_tokens` int(11) NOT NULL DEFAULT 0 COMMENT '输入 token',
+  `completion_tokens` int(11) NOT NULL DEFAULT 0 COMMENT '输出 token',
+  `total_tokens` int(11) NOT NULL DEFAULT 0 COMMENT '总 token',
+  `estimated_cost` decimal(12,6) NOT NULL DEFAULT 0 COMMENT '估算成本',
+  `latency_ms` bigint(20) NOT NULL DEFAULT 0 COMMENT '耗时毫秒',
+  `success` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否成功',
+  `error_msg` varchar(512) DEFAULT NULL COMMENT '错误信息',
+  `prompt_preview` varchar(1000) DEFAULT NULL COMMENT 'prompt 预览',
+  `create_time` datetime NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 ROW_FORMAT = Dynamic;
+
 SET FOREIGN_KEY_CHECKS = 1;

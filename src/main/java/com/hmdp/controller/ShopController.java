@@ -5,7 +5,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.service.IShopService;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 @RestController
 @RequestMapping("/shop")

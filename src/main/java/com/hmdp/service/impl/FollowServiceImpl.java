@@ -5,15 +5,19 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
+import com.hmdp.entity.Blog;
 import com.hmdp.entity.Follow;
 import com.hmdp.mapper.FollowMapper;
+import com.hmdp.service.IBlogService;
 import com.hmdp.service.IFollowService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.UserHolder;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -35,6 +39,10 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
 
     @Resource
     private UserServiceImpl userService;
+
+    @Resource
+    @Lazy
+    private IBlogService blogService;
 
     @Override
     public Result isFollow(Long followUserId) {
@@ -59,8 +67,18 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
             boolean isSuccess = save(follow);
             if (isSuccess){
                 //把关注用户的id，放入redis的set集合
-
                 stringRedisTemplate.opsForSet().add(key,followUserId.toString());
+
+                //★ 补推关注者的所有历史笔记到我的收件箱
+                String feedKey = "feed:" + userId;
+                List<Blog> existingBlogs = blogService.query()
+                        .eq("user_id", followUserId).list();
+                for (Blog blog : existingBlogs) {
+                    long timestamp = blog.getCreateTime()
+                            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                    stringRedisTemplate.opsForZSet()
+                            .add(feedKey, blog.getId().toString(), timestamp);
+                }
             }
         }else {
             //2.2 取关，删除数据
