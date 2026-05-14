@@ -1,11 +1,8 @@
 package com.lightnote.ai.provider.springai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lightnote.ai.intent.AgentIntentAnalyzer;
 import com.lightnote.ai.model.AgentIntent;
 import com.lightnote.ai.provider.AbstractAiProviderService;
-import com.lightnote.ai.reply.ShopCardAssembler;
-import com.lightnote.ai.tool.ShopAgentToolService;
 import com.lightnote.dto.AiAgentRequest;
 import com.lightnote.dto.AiChatRequest;
 import com.lightnote.dto.AiMessageDTO;
@@ -139,7 +136,7 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                             aiStreamService.sendDelta(emitter, delta);
                         } catch (IOException e) {
                             throw new RuntimeException(e);
-                    }
+                        }
                     }, error -> {
                         completed.set(true);
                         recordUsage(userId, "chat", promptTrace, error.getMessage(), startTime, false, error.getMessage());
@@ -183,12 +180,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
 
         try {
-            SpringAiShopTools tools = new SpringAiShopTools(intent, collectedShopMap, shopAgentToolService, shopCardAssembler, intentAnalyzer);
             String content = chatClient.prompt()
                     .system(systemPrompt)
                     .advisors(MessageChatMemoryAdvisor.builder(buildMemory(historyWithoutLastUser(recentMessages))).build())
                     .user(lastMessage.getContent())
-                    .tools(tools)
+                    .tools(new SpringAiShopTools(intent, collectedShopMap))
                     .call()
                     .content();
 
@@ -221,7 +217,6 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
-        SpringAiShopTools tools = new SpringAiShopTools(intent, collectedShopMap, shopAgentToolService, shopCardAssembler, intentAnalyzer);
         String systemPrompt = buildAgentSystemPrompt(intent, recentMessages);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         long startTime = System.currentTimeMillis();
@@ -235,7 +230,7 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                     .system(systemPrompt)
                     .advisors(MessageChatMemoryAdvisor.builder(buildMemory(historyWithoutLastUser(recentMessages))).build())
                     .user(lastMessage.getContent())
-                    .tools(tools)
+                    .tools(new SpringAiShopTools(intent, collectedShopMap))
                     .stream()
                     .content()
                     .subscribe(delta -> {
@@ -296,25 +291,14 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         return memory;
     }
 
-    private static class SpringAiShopTools {
+    private class SpringAiShopTools {
         private final AgentIntent intent;
         private final Map<Long, AgentReply.ShopCard> collectedShopMap;
-        private final ShopAgentToolService shopAgentToolService;
-        private final ShopCardAssembler shopCardAssembler;
-        private final AgentIntentAnalyzer intentAnalyzer;
-        private final ObjectMapper objectMapper;
+        private final ObjectMapper objectMapper = new ObjectMapper();
 
-        private SpringAiShopTools(AgentIntent intent,
-                                  Map<Long, AgentReply.ShopCard> collectedShopMap,
-                                  ShopAgentToolService shopAgentToolService,
-                                  ShopCardAssembler shopCardAssembler,
-                                  AgentIntentAnalyzer intentAnalyzer) {
+        private SpringAiShopTools(AgentIntent intent, Map<Long, AgentReply.ShopCard> collectedShopMap) {
             this.intent = intent;
             this.collectedShopMap = collectedShopMap;
-            this.shopAgentToolService = shopAgentToolService;
-            this.shopCardAssembler = shopCardAssembler;
-            this.intentAnalyzer = intentAnalyzer;
-            this.objectMapper = new ObjectMapper();
         }
 
         @Tool(description = "根据关键词搜索店铺，支持按评分或距离排序")
@@ -323,17 +307,8 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                 @ToolParam(description = "排序方式") String sortBy,
                 @ToolParam(description = "用户经度") Double x,
                 @ToolParam(description = "用户纬度") Double y) {
-            if (keyword == null || keyword.trim().isEmpty()) {
-                return "[]";
-            }
-            String resolvedSortBy = intentAnalyzer.resolveSortBy(sortBy, intent);
-            Double resolvedX = x != null ? x : intent.getX();
-            Double resolvedY = y != null ? y : intent.getY();
-            List<Map<String, Object>> result = shopAgentToolService.searchShop(keyword, resolvedSortBy, resolvedX, resolvedY);
-            for (Map<String, Object> shopMap : result) {
-                shopCardAssembler.mergeShopCard(collectedShopMap, shopMap);
-            }
             try {
+                List<Map<String, Object>> result = shopAgentToolExecutor.searchShop(keyword, sortBy, x, y, intent, collectedShopMap);
                 return objectMapper.writeValueAsString(result);
             } catch (Exception e) {
                 return "[]";
@@ -342,9 +317,8 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
 
         @Tool(description = "查询指定店铺的优惠券")
         public String getVoucher(@ToolParam(description = "店铺ID") Long shopId) {
-            List<Map<String, Object>> vouchers = shopAgentToolService.getVoucher(shopId);
-            shopCardAssembler.mergeVoucherCards(collectedShopMap, vouchers);
             try {
+                List<Map<String, Object>> vouchers = shopAgentToolExecutor.getVoucher(shopId, collectedShopMap);
                 return objectMapper.writeValueAsString(vouchers);
             } catch (Exception e) {
                 return "[]";
@@ -353,11 +327,8 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
 
         @Tool(description = "查询店铺详情")
         public String getShopDetail(@ToolParam(description = "店铺ID") Long shopId) {
-            Map<String, Object> shopMap = shopAgentToolService.getShopDetail(shopId);
-            if (shopMap != null) {
-                shopCardAssembler.mergeShopCard(collectedShopMap, shopMap);
-            }
             try {
+                Map<String, Object> shopMap = shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);
                 return objectMapper.writeValueAsString(shopMap);
             } catch (Exception e) {
                 return "{}";

@@ -1,9 +1,7 @@
 package com.lightnote.ai.provider.nativeprovider;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lightnote.ai.model.AgentIntent;
 import com.lightnote.ai.provider.AbstractAiProviderService;
-import com.lightnote.ai.tool.ToolResultCollector;
 import com.lightnote.dto.AiAgentRequest;
 import com.lightnote.dto.AiChatRequest;
 import com.lightnote.dto.AiMessageDTO;
@@ -28,12 +26,6 @@ public class AiServiceImpl extends AbstractAiProviderService {
 
     @Resource
     private NativeToolSchemaFactory nativeToolSchemaFactory;
-
-    @Resource
-    private ToolResultCollector toolResultCollector;
-
-    @Resource
-    private ObjectMapper objectMapper;
 
     @Override
     public Result chat(AiChatRequest request) {
@@ -82,7 +74,6 @@ public class AiServiceImpl extends AbstractAiProviderService {
         }
 
         saveLastUserMessage(userId, recentMessages);
-
         AgentIntent intent = analyzeIntent(recentMessages, request);
         String systemPrompt = buildAgentSystemPrompt(intent, recentMessages);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
@@ -97,8 +88,8 @@ public class AiServiceImpl extends AbstractAiProviderService {
                 Map<String, Object> result = nativeAiClient.parseResponse(responseBody);
                 Map<String, Object> output = nativeAiClient.castMap(result.get("output"));
                 if (output == null) {
-                    recordUsage(userId, "agent", promptTrace, "AI响应异常", startTime, false, "AI响应异常");
-                    return Result.fail("AI响应异常");
+                    recordUsage(userId, "agent", promptTrace, "AI响应格式异常", startTime, false, "AI响应格式异常");
+                    return Result.fail("AI响应格式异常");
                 }
 
                 List<Map<String, Object>> choices = nativeAiClient.castListOfMap(output.get("choices"));
@@ -111,8 +102,8 @@ public class AiServiceImpl extends AbstractAiProviderService {
                 String finishReason = choice.get("finish_reason") == null ? null : String.valueOf(choice.get("finish_reason"));
                 Map<String, Object> assistantMessage = nativeAiClient.castMap(choice.get("message"));
                 if (assistantMessage == null) {
-                    recordUsage(userId, "agent", promptTrace, "AI返回格式异常", startTime, false, "AI返回格式异常");
-                    return Result.fail("AI返回格式异常");
+                    recordUsage(userId, "agent", promptTrace, "AI消息格式异常", startTime, false, "AI消息格式异常");
+                    return Result.fail("AI消息格式异常");
                 }
                 messages.add(assistantMessage);
 
@@ -130,8 +121,8 @@ public class AiServiceImpl extends AbstractAiProviderService {
                 }
 
                 if (!"tool_calls".equals(finishReason)) {
-                    recordUsage(userId, "agent", promptTrace, "AI返回格式异常", startTime, false, "AI返回格式异常");
-                    return Result.fail("AI返回格式异常");
+                    recordUsage(userId, "agent", promptTrace, "AI结束原因异常", startTime, false, "AI结束原因异常");
+                    return Result.fail("AI结束原因异常");
                 }
 
                 List<Map<String, Object>> toolCalls = nativeAiClient.castListOfMap(assistantMessage.get("tool_calls"));
@@ -148,8 +139,7 @@ public class AiServiceImpl extends AbstractAiProviderService {
                     }
                     String toolName = function.get("name") == null ? null : String.valueOf(function.get("name"));
                     String arguments = function.get("arguments") == null ? "{}" : String.valueOf(function.get("arguments"));
-                    String toolResult = executeTool(toolName, arguments, intent);
-                    toolResultCollector.collect(toolName, toolResult, collectedShopMap);
+                    String toolResult = shopAgentToolExecutor.executeNativeTool(toolName, arguments, intent, collectedShopMap);
                     messages.add(buildToolResultMessage(toolCallId, toolName, toolResult));
                 }
             }
@@ -167,42 +157,6 @@ public class AiServiceImpl extends AbstractAiProviderService {
         }
     }
 
-    private String executeTool(String toolName, String inputJson, AgentIntent intent) {
-        try {
-            Map<String, Object> input = objectMapper.readValue(inputJson, Map.class);
-
-            if ("searchShop".equals(toolName)) {
-                String keyword = input.get("keyword") == null ? "" : String.valueOf(input.get("keyword")).trim();
-                if (keyword.isEmpty()) {
-                    return "[]";
-                }
-                String sortBy = resolveSortBy(valueAsString(input.get("sortBy")), intent);
-                Double x = readDouble(input.get("x"), intent.getX());
-                Double y = readDouble(input.get("y"), intent.getY());
-                return objectMapper.writeValueAsString(shopAgentToolService.searchShop(keyword, sortBy, x, y));
-            }
-
-            if ("getVoucher".equals(toolName)) {
-                Long shopId = readLong(input.get("shopId"));
-                if (shopId == null) {
-                    return errorJson("缺少店铺ID");
-                }
-                return objectMapper.writeValueAsString(shopAgentToolService.getVoucher(shopId));
-            }
-
-            if ("getShopDetail".equals(toolName)) {
-                Long shopId = readLong(input.get("shopId"));
-                if (shopId == null) {
-                    return errorJson("缺少店铺ID");
-                }
-                return objectMapper.writeValueAsString(shopAgentToolService.getShopDetail(shopId));
-            }
-        } catch (Exception e) {
-            return errorJson("工具执行失败: " + e.getMessage());
-        }
-        return errorJson("未知工具");
-    }
-
     private Map<String, Object> buildToolResultMessage(String toolCallId, String toolName, String toolResult) {
         Map<String, Object> message = new HashMap<>();
         message.put("role", "tool");
@@ -210,31 +164,5 @@ public class AiServiceImpl extends AbstractAiProviderService {
         message.put("name", toolName);
         message.put("content", toolResult);
         return message;
-    }
-
-    private String errorJson(String message) {
-        try {
-            return objectMapper.writeValueAsString(Map.of("error", message));
-        } catch (Exception ignored) {
-            return "{\"error\":\"" + message + "\"}";
-        }
-    }
-
-    private String valueAsString(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private Double readDouble(Object value, Double fallback) {
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        return fallback;
-    }
-
-    private Long readLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return null;
     }
 }

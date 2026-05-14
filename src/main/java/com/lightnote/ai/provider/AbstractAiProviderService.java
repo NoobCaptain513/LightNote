@@ -7,6 +7,7 @@ import com.lightnote.ai.prompt.AiPromptService;
 import com.lightnote.ai.rag.AiRagService;
 import com.lightnote.ai.reply.ShopCardAssembler;
 import com.lightnote.ai.stream.AiStreamService;
+import com.lightnote.ai.tool.ShopAgentToolExecutor;
 import com.lightnote.ai.tool.ShopAgentToolService;
 import com.lightnote.ai.usage.AiUsageLogService;
 import com.lightnote.dto.AiAgentRequest;
@@ -39,6 +40,9 @@ public abstract class AbstractAiProviderService implements IAiService {
 
     @Resource
     protected ShopAgentToolService shopAgentToolService;
+
+    @Resource
+    protected ShopAgentToolExecutor shopAgentToolExecutor;
 
     @Resource
     protected AiRagService aiRagService;

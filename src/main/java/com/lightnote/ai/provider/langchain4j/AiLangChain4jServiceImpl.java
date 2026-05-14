@@ -27,7 +27,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -279,8 +278,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
     }
 
     private ChatMemory getOrCreateMemory(Object memoryId) {
-        return chatMemories.computeIfAbsent(memoryId,
-                key -> MessageWindowChatMemory.builder().maxMessages(MAX_REQUEST_MESSAGES + 4).build());
+        return chatMemories.computeIfAbsent(
+                memoryId,
+                key -> MessageWindowChatMemory.builder().maxMessages(MAX_REQUEST_MESSAGES + 4).build()
+        );
     }
 
     private String seedHistoryMemory(String prefix, List<AiMessageDTO> history) {
@@ -324,36 +325,20 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         @Tool("根据关键词搜索店铺，支持按评分或距离排序")
         public List<Map<String, Object>> searchShop(
                 @P("搜索关键词") String keyword,
-                @P("排序方式，可选 default、score_desc、distance_asc") String sortBy,
+                @P("排序方式") String sortBy,
                 @P("用户经度") Double x,
                 @P("用户纬度") Double y) {
-            if (keyword == null || keyword.trim().isEmpty()) {
-                return new ArrayList<>();
-            }
-            String resolvedSortBy = resolveSortBy(sortBy, intent);
-            Double resolvedX = x != null ? x : intent.getX();
-            Double resolvedY = y != null ? y : intent.getY();
-            List<Map<String, Object>> result = shopAgentToolService.searchShop(keyword, resolvedSortBy, resolvedX, resolvedY);
-            for (Map<String, Object> shopMap : result) {
-                shopCardAssembler.mergeShopCard(collectedShopMap, shopMap);
-            }
-            return result;
+            return shopAgentToolExecutor.searchShop(keyword, sortBy, x, y, intent, collectedShopMap);
         }
 
         @Tool("查询指定店铺的优惠券")
         public List<Map<String, Object>> getVoucher(@P("店铺ID") Long shopId) {
-            List<Map<String, Object>> vouchers = shopAgentToolService.getVoucher(shopId);
-            shopCardAssembler.mergeVoucherCards(collectedShopMap, vouchers);
-            return vouchers;
+            return shopAgentToolExecutor.getVoucher(shopId, collectedShopMap);
         }
 
         @Tool("查询店铺详情")
         public Map<String, Object> getShopDetail(@P("店铺ID") Long shopId) {
-            Map<String, Object> shopMap = shopAgentToolService.getShopDetail(shopId);
-            if (shopMap != null) {
-                shopCardAssembler.mergeShopCard(collectedShopMap, shopMap);
-            }
-            return shopMap;
+            return shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);
         }
     }
 }
