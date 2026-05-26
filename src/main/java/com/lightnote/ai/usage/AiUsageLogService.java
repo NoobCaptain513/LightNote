@@ -26,6 +26,9 @@ public class AiUsageLogService {
     @Value("${ai.model:qwen-max}")
     private String modelName;
 
+    /**
+     * 记录一次调用
+     */
     public void record(Long userId,
                        String bizMode,
                        String promptText,
@@ -77,6 +80,9 @@ public class AiUsageLogService {
         return text.trim().length();
     }
 
+    /**
+     * 截断文本
+     */
     private String abbreviate(String text, int maxLength) {
         if (text == null || text.length() <= maxLength) {
             return text;

@@ -13,10 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,31 +27,21 @@ public class ShopAgentToolService {
 
     private static final double MAX_DISTANCE_METERS = 10_000D;
 
-    private static final Map<String, List<String>> DEFAULT_TYPE_ALIASES = new HashMap<>();
-
-    static {
-        DEFAULT_TYPE_ALIASES.put("美食", Arrays.asList(
-                "吃饭", "吃的", "餐厅", "饭店", "馆子", "美食", "小吃", "夜宵", "早餐", "下午茶",
-                "咖啡", "奶茶", "甜品", "火锅", "烧烤", "烤肉", "自助", "海鲜", "寿司", "日料",
-                "西餐", "中餐", "川菜", "湘菜", "粤菜", "面", "粉", "麻辣烫"
-        ));
-        DEFAULT_TYPE_ALIASES.put("ktv", Arrays.asList("ktv", "唱歌", "歌厅", "量贩ktv", "麦霸"));
-        DEFAULT_TYPE_ALIASES.put("丽人美发", Arrays.asList("美发", "理发", "剪发", "剪头发", "做头发", "染发", "烫发", "发型"));
-        DEFAULT_TYPE_ALIASES.put("健身运动", Arrays.asList("健身", "运动", "瑜伽", "羽毛球", "篮球", "游泳", "撸铁", "健身房"));
-        DEFAULT_TYPE_ALIASES.put("按摩足疗", Arrays.asList("按摩", "足疗", "推拿", "采耳", "修脚", "足浴"));
-        DEFAULT_TYPE_ALIASES.put("美容spa", Arrays.asList("美容", "spa", "护肤", "面部护理", "身体护理"));
-        DEFAULT_TYPE_ALIASES.put("亲子游乐", Arrays.asList("亲子", "儿童乐园", "遛娃", "宝宝玩", "游乐场"));
-        DEFAULT_TYPE_ALIASES.put("酒吧", Arrays.asList("酒吧", "清吧", "小酒馆", "夜店", "喝酒"));
-        DEFAULT_TYPE_ALIASES.put("轰趴馆", Arrays.asList("轰趴", "聚会", "团建"));
-        DEFAULT_TYPE_ALIASES.put("美睫美甲", Arrays.asList("美甲", "美睫", "做指甲", "指甲", "睫毛"));
-    }
-
     private final IShopService shopService;
     private final IShopTypeService shopTypeService;
     private final IVoucherService voucherService;
     private final ShopCardAssembler shopCardAssembler;
     private final ShopTypeAliasesProperties shopTypeAliasesProperties;
 
+    /**
+     * 搜索商店（按名称或类型）
+     *
+     * @param keyword 搜索关键词（可以是商店名称或类型）
+     * @param sortBy  排序字段（如"distance"或"rating"）
+     * @param x       用户经度
+     * @param y       用户纬度
+     * @return 包含商店映射的列表（每个商店包含名称、类型、距离、评分、优惠券等信息）
+     */
     public List<Map<String, Object>> searchShop(String keyword, String sortBy, Double x, Double y) {
         List<Shop> shops = searchShopsByKeywordOrType(keyword, sortBy, x, y);
         List<Map<String, Object>> results = new ArrayList<>(shops.size());
@@ -63,6 +51,12 @@ public class ShopAgentToolService {
         return results;
     }
 
+    /**
+     * 获取商店优惠券
+     *
+     * @param shopId 商店ID
+     * @return 包含优惠券映射的列表（每个优惠券包含标题、描述、金额等信息）
+     */
     public List<Map<String, Object>> getVoucher(Long shopId) {
         if (shopId == null) {
             return new ArrayList<>();
@@ -83,6 +77,12 @@ public class ShopAgentToolService {
         return vouchers;
     }
 
+    /**
+     * 获取商店详细信息
+     *
+     * @param shopId 商店ID
+     * @return 包含商店详细信息的映射（包含名称、类型、地址、评分、优惠券等）
+     */
     public Map<String, Object> getShopDetail(Long shopId) {
         if (shopId == null) {
             return new LinkedHashMap<>();
@@ -94,8 +94,14 @@ public class ShopAgentToolService {
         return shopCardAssembler.toShopMap(shop);
     }
 
+    /**
+     * 为商店卡片添加优惠券信息
+     *
+     * @param shops 商店卡片列表
+     */
     public void enrichShopCardsWithVouchers(List<AgentReply.ShopCard> shops) {
         for (AgentReply.ShopCard shop : shops) {
+            // 如果商店已经添加过优惠券信息，则跳过
             if (shop.getId() == null || shop.getVoucherTitle() != null) {
                 continue;
             }
@@ -105,6 +111,7 @@ public class ShopAgentToolService {
                 continue;
             }
             Object first = list.get(0);
+            // 如果优惠券数据格式不正确，则跳过
             if (!(first instanceof Voucher voucher)) {
                 continue;
             }
@@ -113,7 +120,15 @@ public class ShopAgentToolService {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * 根据关键词或类型搜索商店
+     *
+     * @param keyword 关键词（可以是商店名称或类型）
+     * @param sortBy 排序字段（如"distance"或"rating"）
+     * @param x 用户经度
+     * @param y 用户纬度
+     * @return 匹配的商店列表
+     */
     private List<Shop> searchShopsByKeywordOrType(String keyword, String sortBy, Double x, Double y) {
         String trimmedKeyword = keyword == null ? "" : keyword.trim();
         if (trimmedKeyword.isEmpty()) {
@@ -143,6 +158,14 @@ public class ShopAgentToolService {
         return shops;
     }
 
+    /**
+     * 应用商店排序策略
+     *
+     * @param shops 商店列表
+     * @param sortBy 排序方式（"distance_asc"或"score_desc"）
+     * @param x 用户经度
+     * @param y 用户纬度
+     */
     private void applyShopSorting(List<Shop> shops, String sortBy, Double x, Double y) {
         if (x != null && y != null) {
             for (Shop shop : shops) {
@@ -169,7 +192,13 @@ public class ShopAgentToolService {
         }
     }
 
-    private List<Long> resolveMatchedShopTypeIds(String keyword) {
+    /**
+     * 解析匹配的商店类型ID（根据关键词）
+     *
+     * @param keyword 关键词（可以是商店类型名称或别名）
+     * @return 匹配的商店类型ID列表
+     */
+    private List<Long> resolveMatchedShopTypeIds(String keyword){
         String normalizedKeyword = normalizeTypeText(keyword);
         if (normalizedKeyword.isEmpty()) {
             return new ArrayList<>();
@@ -194,6 +223,13 @@ public class ShopAgentToolService {
         return new ArrayList<>(matchedTypeIds);
     }
 
+    /**
+     * 匹配商店类型别名（根据关键词）
+     *
+     * @param normalizedKeyword 已归一化的关键词
+     * @param normalizedTypeName 已归一化的商店类型名称
+     * @return 如果匹配成功则返回true，否则返回false
+     */
     private boolean matchTypeAlias(String normalizedKeyword, String normalizedTypeName) {
         for (String alias : getAliases(normalizedTypeName)) {
             String normalizedAlias = normalizeTypeText(alias);
@@ -207,6 +243,12 @@ public class ShopAgentToolService {
         return false;
     }
 
+    /**
+     * 获取商店类型的别名列表（根据商店类型名称）
+     *
+     * @param normalizedTypeName 已归一化的商店类型名称
+     * @return 商店类型的别名列表
+     */
     private List<String> getAliases(String normalizedTypeName) {
         Map<String, List<String>> configuredAliases = shopTypeAliasesProperties.getTypeAliases();
         if (configuredAliases != null && !configuredAliases.isEmpty()) {
@@ -216,9 +258,15 @@ public class ShopAgentToolService {
                 }
             }
         }
-        return DEFAULT_TYPE_ALIASES.getOrDefault(normalizedTypeName, Collections.emptyList());
+        return Collections.emptyList();
     }
 
+    /**
+     * 归一化商店类型文本（移除特殊字符和空格）
+     *
+     * @param text 商店类型文本
+     * @return 归一化后的文本
+     */
     private String normalizeTypeText(String text) {
         if (text == null) {
             return "";
@@ -238,6 +286,15 @@ public class ShopAgentToolService {
                 .trim();
     }
 
+    /**
+     * 计算两点之间的距离（米）
+     *
+     * @param x1 第一个点的经度
+     * @param y1 第一个点的纬度
+     * @param x2 第二个点的经度
+     * @param y2 第二个点的纬度
+     * @return 两点之间的距离（米）
+     */
     private double calculateDistanceMeters(Double x1, Double y1, Double x2, Double y2) {
         double earthRadius = 6371000D;
         double lat1 = Math.toRadians(y1);

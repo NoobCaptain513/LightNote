@@ -49,6 +49,9 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
 
     private ChatClient chatClient;
 
+    /**
+     * 初始化Spring AI客户端
+     */
     @PostConstruct
     public void initSpringAiClient() {
         OpenAiApi openAiApi = OpenAiApi.builder()
@@ -67,6 +70,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         this.chatClient = ChatClient.create(chatModel);
     }
 
+    /**
+     * 处理用户聊天请求
+     * @param request 用户聊天请求
+     * @return 包含AI回复的Result对象
+     */
     @Override
     public Result chat(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
@@ -101,6 +109,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 处理用户聊天流请求
+     * @param request 用户聊天流请求
+     * @return 包含AI回复流的SseEmitter对象
+     */
     @Override
     public SseEmitter streamChat(AiChatRequest request) {
         Long userId = getCurrentUserId();
@@ -146,6 +159,9 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                             throw new RuntimeException(e);
                         }
                     }, () -> {
+                        // 流式回调可能存在异常回调和完成回调先后触发的边界情况。
+                        // getAndSet(true) 用原子方式判断是否已经处理过收尾逻辑，
+                        // 确保保存回复、记录日志、发送 done、关闭 SSE 连接这些操作只执行一次。
                         if (completed.getAndSet(true)) {
                             return;
                         }
@@ -162,6 +178,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         });
     }
 
+    /**
+     * 处理用户智能体请求
+     * @param request 用户智能体请求
+     * @return 包含AI回复的Result对象
+     */
     @Override
     public Result agentChat(AiAgentRequest request) {
         long startTime = System.currentTimeMillis();
@@ -204,6 +225,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 处理用户智能体流请求
+     * @param request 用户智能体流请求
+     * @return 包含AI回复流的SseEmitter对象
+     */
     @Override
     public SseEmitter streamAgentChat(AiAgentRequest request) {
         Long userId = getCurrentUserId();
@@ -216,6 +242,7 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
+        //工具结果收集容器
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
         String systemPrompt = buildAgentSystemPrompt(intent, recentMessages);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
@@ -273,6 +300,11 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         });
     }
 
+    /**
+     * 构建聊天记忆
+     * @param history 聊天历史记录
+     * @return 包含聊天历史记录的ChatMemory对象
+     */
     private ChatMemory buildMemory(List<AiMessageDTO> history) {
         MessageWindowChatMemory memory = MessageWindowChatMemory.builder()
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
@@ -291,6 +323,9 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         return memory;
     }
 
+    /**
+     * Spring AI智能体工具类
+     */
     private class SpringAiShopTools {
         private final AgentIntent intent;
         private final Map<Long, AgentReply.ShopCard> collectedShopMap;

@@ -29,6 +29,9 @@ public class AiPromptService {
 
     private String shopTypePrompt = "";
 
+    /**
+     * 初始化店铺类型提示
+     */
     @PostConstruct
     public void initShopTypePrompt() {
         List<String> shopTypes = shopTypeService.list().stream()
@@ -37,14 +40,32 @@ public class AiPromptService {
         this.shopTypePrompt = "平台支持的店铺类型包括：" + String.join("、", shopTypes) + "。";
     }
 
+    /**
+     * 获取默认系统提示
+     *
+     * @return 默认系统提示
+     */
     public String getDefaultSystemPrompt() {
         return DEFAULT_SYSTEM_PROMPT;
     }
 
+    /**
+     * 构建智能体系统提示
+     *
+     * @param intent 智能体意图
+     * @return 智能体系统提示
+     */
     public String buildAgentSystemPrompt(AgentIntent intent) {
         return DEFAULT_AGENT_SYSTEM_PROMPT + shopTypePrompt + buildIntentPrompt(intent);
     }
 
+    /**
+     * 追加RAG上下文到基础提示
+     *
+     * @param basePrompt 基础提示
+     * @param ragContext RAG上下文
+     * @return 包含RAG上下文的提示
+     */
     public String appendRagContext(String basePrompt, String ragContext) {
         if (ragContext == null || ragContext.trim().isEmpty()) {
             return basePrompt;
@@ -52,6 +73,12 @@ public class AiPromptService {
         return basePrompt + "\n" + ragContext;
     }
 
+    /**
+     * 构建智能体意图提示
+     *
+     * @param intent 智能体意图
+     * @return 智能体意图提示
+     */
     private String buildIntentPrompt(AgentIntent intent) {
         StringBuilder builder = new StringBuilder();
         if (intent.isNeedVoucher()) {

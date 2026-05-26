@@ -53,6 +53,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
     private OpenAiStreamingChatModel streamingChatModel;
     private final ConcurrentMap<Object, ChatMemory> chatMemories = new ConcurrentHashMap<>();
 
+    /**
+     * 初始化LangChain4j服务。
+     * 此方法在Bean初始化后调用，用于设置聊天模型和助手。
+     */
     @PostConstruct
     public void initLangChain4j() {
         String baseUrl = compatibleBaseUrl.endsWith("/v1") ? compatibleBaseUrl : compatibleBaseUrl + "/v1";
@@ -79,6 +83,12 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                 .build();
     }
 
+    /**
+     * 处理聊天请求。
+     * 此方法是聊天功能的一部分。
+     * @param request AI聊天请求。
+     * @return 聊天结果。
+     */
     @Override
     public Result chat(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
@@ -110,9 +120,16 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 处理聊天流式请求。
+     * 此方法是聊天功能的一部分。
+     * @param request AI聊天请求。
+     * @return 用于流式传输聊天响应的SseEmitter。
+     */
     @Override
     public SseEmitter streamChat(AiChatRequest request) {
         Long userId = getCurrentUserId();
+        //归一化处理
         List<AiMessageDTO> recentMessages = normalizeRecentMessages(request == null ? null : request.getMessages());
         Result validateResult = validateUserRequest(userId, recentMessages);
         if (validateResult != null) {
@@ -166,6 +183,12 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         });
     }
 
+    /**
+     * 处理代理聊天请求。
+     * 此方法是代理功能的一部分。
+     * @param request AI代理请求。
+     * @return 代理聊天结果。
+     */
     @Override
     public Result agentChat(AiAgentRequest request) {
         long startTime = System.currentTimeMillis();
@@ -209,6 +232,12 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 处理代理聊天流式请求。
+     * 此方法是代理功能的一部分。
+     * @param request AI代理请求。
+     * @return 用于流式传输代理聊天响应的SseEmitter。
+     */
     @Override
     public SseEmitter streamAgentChat(AiAgentRequest request) {
         Long userId = getCurrentUserId();
@@ -277,6 +306,12 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         });
     }
 
+    /**
+     * 获取或创建聊天内存。
+     * 此方法用于为每个聊天会话创建或获取聊天内存。
+     * @param memoryId 聊天内存的唯一标识符。
+     * @return 聊天内存对象。
+     */
     private ChatMemory getOrCreateMemory(Object memoryId) {
         return chatMemories.computeIfAbsent(
                 memoryId,
@@ -284,6 +319,13 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         );
     }
 
+    /**
+     * 填充历史记录到聊天内存。
+     * 此方法用于将历史记录添加到聊天内存中。
+     * @param prefix 聊天内存前缀。
+     * @param history 历史记录列表。
+     * @return 聊天内存对象的唯一标识符。
+     */
     private String seedHistoryMemory(String prefix, List<AiMessageDTO> history) {
         String memoryId = prefix + ":" + UUID.randomUUID();
         ChatMemory memory = getOrCreateMemory(memoryId);
@@ -299,6 +341,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         return memoryId;
     }
 
+    /**
+     * 聊天助手接口。
+     * 此接口定义了与LangChain4j聊天模型交互的方法。
+     */
     private interface LangChainAssistant {
         @SystemMessage("{{systemPrompt}}")
         String chat(@MemoryId Object memoryId,
@@ -306,6 +352,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                     @UserMessage String userMessage);
     }
 
+    /**
+     * 流式聊天助手接口。
+     * 此接口定义了与LangChain4j流式聊天模型交互的方法。
+     */
     private interface StreamingLangChainAssistant {
         @SystemMessage("{{systemPrompt}}")
         TokenStream chat(@MemoryId Object memoryId,
@@ -313,6 +363,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                          @UserMessage String userMessage);
     }
 
+    /**
+     * 聊天助手工具类。
+     * 此类包含了与LangChain4j聊天模型交互的工具方法。
+     */
     private class LangChainShopTools {
         private final AgentIntent intent;
         private final Map<Long, AgentReply.ShopCard> collectedShopMap;

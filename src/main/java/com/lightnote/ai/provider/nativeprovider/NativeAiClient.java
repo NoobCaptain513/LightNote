@@ -48,6 +48,13 @@ public class NativeAiClient {
                 .build();
     }
 
+    /**
+     * 构建请求消息列表
+     *
+     * @param systemPrompt 系统提示
+     * @param history      消息历史记录
+     * @return 包含系统提示和历史记录的消息列表
+     */
     public List<Map<String, Object>> buildRequestMessages(String systemPrompt, List<AiMessageDTO> history) {
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(buildMessage("system", systemPrompt));
@@ -57,6 +64,13 @@ public class NativeAiClient {
         return messages;
     }
 
+    /**
+     * 构建聊天请求体
+     *
+     * @param messages 消息列表
+     * @param tools    工具列表
+     * @return 包含消息列表和工具列表的聊天请求体
+     */
     public Map<String, Object> buildChatBody(List<Map<String, Object>> messages, List<Map<String, Object>> tools) {
         Map<String, Object> input = new HashMap<>();
         input.put("messages", messages);
@@ -75,6 +89,13 @@ public class NativeAiClient {
         return body;
     }
 
+    /**
+     * 调用模型API
+     *
+     * @param body 聊天请求体
+     * @return 模型API的响应字符串
+     * @throws IOException 如果请求失败或解析响应失败
+     */
     public String callModel(Map<String, Object> body) throws IOException {
         String json = objectMapper.writeValueAsString(body);
         Request request = new Request.Builder()
@@ -93,6 +114,13 @@ public class NativeAiClient {
         }
     }
 
+    /**
+     * 从模型API响应中提取助手的内容
+     *
+     * @param responseBody 模型API的响应字符串
+     * @return 助手的内容字符串
+     * @throws IOException 如果解析响应失败
+     */
     public String extractAssistantContent(String responseBody) throws IOException {
         Map<String, Object> result = parseResponse(responseBody);
         Map<String, Object> output = castMap(result.get("output"));
@@ -112,20 +140,46 @@ public class NativeAiClient {
         return text == null ? null : text.toString();
     }
 
+    /**
+     * 解析模型API响应
+     *
+     * @param responseBody 模型API的响应字符串
+     * @return 解析后的响应映射
+     * @throws IOException 如果解析响应失败
+     */
     public Map<String, Object> parseResponse(String responseBody) throws IOException {
         return objectMapper.readValue(responseBody, Map.class);
     }
 
+    /**
+     * 安全地将对象转换为映射
+     *
+     * @param value 要转换的对象
+     * @return 转换后的映射（如果成功），否则返回null
+     */
     @SuppressWarnings("unchecked")
     public Map<String, Object> castMap(Object value) {
         return value instanceof Map ? (Map<String, Object>) value : null;
     }
 
+    /**
+     * 安全地将对象转换为映射列表
+     *
+     * @param value 要转换的对象
+     * @return 转换后的映射列表（如果成功），否则返回null
+     */
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> castListOfMap(Object value) {
         return value instanceof List ? (List<Map<String, Object>>) value : null;
     }
 
+    /**
+     * 构建消息映射
+     *
+     * @param role    消息角色（如"user"或"assistant"）
+     * @param content 消息内容
+     * @return 包含角色和内容的消息映射
+     */
     private Map<String, Object> buildMessage(String role, String content) {
         Map<String, Object> message = new HashMap<>();
         message.put("role", role);

@@ -13,6 +13,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+//AI 工具调用的执行适配层
 public class ShopAgentToolExecutor {
 
     private final ShopAgentToolService shopAgentToolService;
@@ -20,6 +21,16 @@ public class ShopAgentToolExecutor {
     private final AgentIntentAnalyzer intentAnalyzer;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 执行店铺搜索工具
+     * @param keyword 搜索关键词
+     * @param sortBy 排序字段
+     * @param x 经度
+     * @param y 纬度
+     * @param intent 意图
+     * @param collectedShopMap 巶集的店铺卡片映射
+     * @return 包含店铺卡片的列表
+     */
     public List<Map<String, Object>> searchShop(String keyword,
                                                 String sortBy,
                                                 Double x,
@@ -27,6 +38,7 @@ public class ShopAgentToolExecutor {
                                                 AgentIntent intent,
                                                 Map<Long, AgentReply.ShopCard> collectedShopMap) {
         if (keyword == null || keyword.trim().isEmpty()) {
+            // 返回空列表
             return List.of();
         }
         String resolvedSortBy = intentAnalyzer.resolveSortBy(sortBy, intent);
@@ -39,6 +51,12 @@ public class ShopAgentToolExecutor {
         return result;
     }
 
+    /**
+     * 执行获取店铺优惠券工具
+     * @param shopId 店铺ID
+     * @param collectedShopMap 巶集的店铺卡片映射
+     * @return 包含优惠券卡片的列表
+     */
     public List<Map<String, Object>> getVoucher(Long shopId,
                                                 Map<Long, AgentReply.ShopCard> collectedShopMap) {
         List<Map<String, Object>> vouchers = shopAgentToolService.getVoucher(shopId);
@@ -46,6 +64,12 @@ public class ShopAgentToolExecutor {
         return vouchers;
     }
 
+    /**
+     * 执行获取店铺详情工具
+     * @param shopId 店铺ID
+     * @param collectedShopMap 巶集的店铺卡片映射
+     * @return 包含店铺详情的映射
+     */
     public Map<String, Object> getShopDetail(Long shopId,
                                              Map<Long, AgentReply.ShopCard> collectedShopMap) {
         Map<String, Object> shopMap = shopAgentToolService.getShopDetail(shopId);
@@ -55,6 +79,14 @@ public class ShopAgentToolExecutor {
         return shopMap;
     }
 
+    /**
+     * 执行本地工具
+     * @param toolName 工具名称
+     * @param inputJson 输入参数JSON字符串
+     * @param intent 意图
+     * @param collectedShopMap 巶集的店铺卡片映射
+     * @return 包含工具执行结果的JSON字符串
+     */
     public String executeNativeTool(String toolName,
                                     String inputJson,
                                     AgentIntent intent,
@@ -95,6 +127,11 @@ public class ShopAgentToolExecutor {
         return errorJson("未知工具");
     }
 
+    /**
+     * 生成错误JSON字符串
+     * @param message 错误消息
+     * @return 包含错误消息的JSON字符串
+     */
     private String errorJson(String message) {
         try {
             return objectMapper.writeValueAsString(Map.of("error", message));
@@ -103,10 +140,20 @@ public class ShopAgentToolExecutor {
         }
     }
 
+    /**
+     * 将对象转换为字符串
+     * @param value 输入值
+     * @return 转换后的字符串
+     */
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 
+    /**
+     * 将对象转换为Double
+     * @param value 输入值
+     * @return 转换后的Double值
+     */
     private Double readDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -114,6 +161,11 @@ public class ShopAgentToolExecutor {
         return null;
     }
 
+    /**
+     * 将对象转换为Long
+     * @param value 输入值
+     * @return 转换后的Long值
+     */
     private Long readLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();

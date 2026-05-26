@@ -9,6 +9,10 @@ import java.util.Map;
 @Component
 public class NativeToolSchemaFactory {
 
+        /**
+         * 构建本地工具的JSON Schema
+         * @return 包含本地工具JSON Schema的列表
+         */
     public List<Map<String, Object>> buildSchemas() {
         List<Map<String, Object>> tools = new ArrayList<>();
 

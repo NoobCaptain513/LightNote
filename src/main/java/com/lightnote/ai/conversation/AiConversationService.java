@@ -26,11 +26,23 @@ public class AiConversationService {
     private final AiMessageMapper aiMessageMapper;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 获取当前登录用户 ID。
+     *
+     * @return 当前用户 ID，未登录时返回 {@code null}
+     */
     public Long getCurrentUserId() {
         UserDTO user = UserHolder.getUser();
         return user == null ? null : user.getId();
     }
 
+    /**
+     * 校验用户请求是否合法。
+     *
+     * @param userId 当前用户 ID
+     * @param recentMessages 最近消息列表
+     * @return 校验失败时返回失败结果，校验通过时返回 {@code null}
+     */
     public Result validateUserRequest(Long userId, List<AiMessageDTO> recentMessages) {
         if (userId == null) {
             return Result.fail("用户未登录");
@@ -45,6 +57,13 @@ public class AiConversationService {
         return null;
     }
 
+    /**
+     * 标准化最近消息列表，过滤空消息并限制最大条数。
+     *
+     * @param messages 原始消息列表
+     * @param maxMessages 最大保留条数
+     * @return 处理后的消息列表
+     */
     public List<AiMessageDTO> normalizeRecentMessages(List<AiMessageDTO> messages, int maxMessages) {
         List<AiMessageDTO> normalized = new ArrayList<>();
         if (messages == null) {
@@ -72,6 +91,13 @@ public class AiConversationService {
         return new ArrayList<>(normalized.subList(normalized.size() - maxMessages, normalized.size()));
     }
 
+    /**
+     * 获取用户历史消息结果。
+     *
+     * @param userId 当前用户 ID
+     * @param maxHistoryMessages 最大历史消息条数
+     * @return 历史消息结果
+     */
     public Result getHistory(Long userId, int maxHistoryMessages) {
         if (userId == null) {
             return Result.fail("用户未登录");
@@ -79,6 +105,13 @@ public class AiConversationService {
         return Result.ok(getHistoryMessages(userId, maxHistoryMessages));
     }
 
+    /**
+     * 查询用户历史消息列表。
+     *
+     * @param userId 当前用户 ID
+     * @param maxHistoryMessages 最大历史消息条数
+     * @return 历史消息列表
+     */
     public List<AiMessageDTO> getHistoryMessages(Long userId, int maxHistoryMessages) {
         LambdaQueryWrapper<AiMessage> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AiMessage::getUserId, userId)
@@ -94,6 +127,12 @@ public class AiConversationService {
         return history;
     }
 
+    /**
+     * 获取去掉最后一条用户消息后的历史消息。
+     *
+     * @param recentMessages 最近消息列表
+     * @return 不包含最后一条用户消息的列表
+     */
     public List<AiMessageDTO> historyWithoutLastUser(List<AiMessageDTO> recentMessages) {
         if (recentMessages == null || recentMessages.size() <= 1) {
             return new ArrayList<>();
@@ -101,6 +140,12 @@ public class AiConversationService {
         return new ArrayList<>(recentMessages.subList(0, recentMessages.size() - 1));
     }
 
+    /**
+     * 获取最后一条消息。
+     *
+     * @param recentMessages 最近消息列表
+     * @return 最后一条消息；如果为空则返回 {@code null}
+     */
     public AiMessageDTO getLastMessage(List<AiMessageDTO> recentMessages) {
         if (recentMessages == null || recentMessages.isEmpty()) {
             return null;
@@ -108,6 +153,12 @@ public class AiConversationService {
         return recentMessages.get(recentMessages.size() - 1);
     }
 
+    /**
+     * 保存最后一条用户消息。
+     *
+     * @param userId 当前用户 ID
+     * @param recentMessages 最近消息列表
+     */
     public void saveLastUserMessage(Long userId, List<AiMessageDTO> recentMessages) {
         AiMessageDTO lastUserMessage = getLastMessage(recentMessages);
         if (lastUserMessage == null || !"user".equals(lastUserMessage.getRole())) {
@@ -120,10 +171,23 @@ public class AiConversationService {
                 .setCreateTime(LocalDateTime.now()));
     }
 
+    /**
+     * 保存助手消息。
+     *
+     * @param userId 当前用户 ID
+     * @param content 助手回复内容
+     */
     public void saveAssistantMessage(Long userId, String content) {
         saveAssistantMessage(userId, content, null);
     }
 
+    /**
+     * 保存助手消息，并附带店铺卡片数据。
+     *
+     * @param userId 当前用户 ID
+     * @param content 助手回复内容
+     * @param shops 店铺卡片列表
+     */
     public void saveAssistantMessage(Long userId, String content, List<AgentReply.ShopCard> shops) {
         aiMessageMapper.insert(new AiMessage()
                 .setUserId(userId)
@@ -132,6 +196,12 @@ public class AiConversationService {
                 .setCreateTime(LocalDateTime.now()));
     }
 
+    /**
+     * 兜底处理助手回复，避免返回空字符串。
+     *
+     * @param content 助手回复内容
+     * @return 非空回复文本
+     */
     public String safeAssistantReply(String content) {
         if (content == null || content.trim().isEmpty()) {
             return "我已经查到一些结果，但当前总结为空，你可以换一种问法继续问我。";
@@ -139,6 +209,12 @@ public class AiConversationService {
         return content.trim();
     }
 
+    /**
+     * 将持久化消息转换为历史消息 DTO，并在需要时解析 Agent 附加数据。
+     *
+     * @param message 持久化消息实体
+     * @return 历史消息 DTO
+     */
     private AiMessageDTO toHistoryMessage(AiMessage message) {
         AiMessageDTO dto = new AiMessageDTO();
         dto.setRole(message.getRole());
@@ -159,6 +235,13 @@ public class AiConversationService {
         return dto;
     }
 
+    /**
+     * 将助手回复和店铺卡片编码为持久化内容。
+     *
+     * @param content 助手回复内容
+     * @param shops 店铺卡片列表
+     * @return 编码后的持久化内容
+     */
     private String encodeAssistantContent(String content, List<AgentReply.ShopCard> shops) {
         if (shops == null || shops.isEmpty()) {
             return content;

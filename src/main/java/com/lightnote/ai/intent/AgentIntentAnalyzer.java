@@ -10,6 +10,13 @@ import java.util.List;
 @Component
 public class AgentIntentAnalyzer {
 
+    /**
+     * 分析智能体意图
+     *
+     * @param recentMessages 最近消息列表
+     * @param request        智能体请求
+     * @return 分析后的智能体意图
+     */
     public AgentIntent analyze(List<AiMessageDTO> recentMessages, AiAgentRequest request) {
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         String lastUserText = lastMessage == null || lastMessage.getContent() == null ? "" : lastMessage.getContent();
@@ -23,6 +30,13 @@ public class AgentIntentAnalyzer {
         return new AgentIntent(needVoucher, sortByScore, sortByDistance, x, y);
     }
 
+    /**
+     * 解析排序方式
+     *
+     * @param sortBy 排序方式
+     * @param intent 智能体意图
+     * @return 解析后的排序方式
+     */
     public String resolveSortBy(String sortBy, AgentIntent intent) {
         if (sortBy != null && !sortBy.trim().isEmpty()) {
             return sortBy.trim();
@@ -36,6 +50,12 @@ public class AgentIntentAnalyzer {
         return "default";
     }
 
+    /**
+     * 获取最近一条用户消息
+     *
+     * @param recentMessages 最近消息列表
+     * @return 最近一条用户消息
+     */
     private AiMessageDTO getLastMessage(List<AiMessageDTO> recentMessages) {
         if (recentMessages == null || recentMessages.isEmpty()) {
             return null;
@@ -43,6 +63,13 @@ public class AgentIntentAnalyzer {
         return recentMessages.get(recentMessages.size() - 1);
     }
 
+    /**
+     * 检查文本是否包含任意关键词
+     *
+     * @param text    要检查的文本
+     * @param keywords 关键词数组
+     * @return 如果文本包含任意关键词则返回true，否则返回false
+     */
     private boolean containsAny(String text, String... keywords) {
         if (text == null || text.isEmpty()) {
             return false;

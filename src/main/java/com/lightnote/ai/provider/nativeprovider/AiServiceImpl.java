@@ -27,6 +27,11 @@ public class AiServiceImpl extends AbstractAiProviderService {
     @Resource
     private NativeToolSchemaFactory nativeToolSchemaFactory;
 
+    /**
+     * 处理用户聊天请求
+     * @param request 用户聊天请求
+     * @return 包含AI回复的Result对象
+     */
     @Override
     public Result chat(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
@@ -63,6 +68,11 @@ public class AiServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 处理用户智能体请求
+     * @param request 用户智能体请求
+     * @return 包含AI回复的Result对象
+     */
     @Override
     public Result agentChat(AiAgentRequest request) {
         long startTime = System.currentTimeMillis();
@@ -157,6 +167,13 @@ public class AiServiceImpl extends AbstractAiProviderService {
         }
     }
 
+    /**
+     * 构建工具调用结果消息
+     * @param toolCallId 工具调用ID
+     * @param toolName 工具名称
+     * @param toolResult 工具调用结果
+     * @return 包含工具调用结果的Map对象
+     */
     private Map<String, Object> buildToolResultMessage(String toolCallId, String toolName, String toolResult) {
         Map<String, Object> message = new HashMap<>();
         message.put("role", "tool");

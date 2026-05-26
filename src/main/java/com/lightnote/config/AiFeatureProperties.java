@@ -15,7 +15,7 @@ public class AiFeatureProperties {
 
     @Data
     public static class Rag {
-        private int topK = 3;
+        private int topK = 5;
         private int vectorDimension = 64;
         private boolean autoRebuildOnEmpty = true;
     }
