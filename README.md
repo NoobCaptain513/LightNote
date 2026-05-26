@@ -12,12 +12,11 @@
 - 支持 **店铺查询、优惠券、笔记、点赞、关注** 等基础业务能力。
 - 基于 **WebSocket / STOMP** 扩展私聊模块，支持消息持久化、历史消息查询、在线推送。
 - 自研 **AI Agent 编排链路**，支持店铺搜索、店铺详情、优惠券查询等 Tool Calling。
-- 支持三套 AI 实现方式切换：
-  - `native`：原生 HTTP / OkHttp 手写编排
+- 支持两套 AI 实现方式切换：
   - `spring-ai`：Spring AI 版本
   - `langchain4j`：LangChain4j 版本
 - 增强了三项更偏工程化的 AI 能力：
-  - `RAG`：基于业务数据构建轻量知识库
+  - `RAG`：基于业务数据构建 pgvector 向量知识库，并通过 Embedding API 检索增强回答
   - `SSE 流式输出`：支持 `/chat/stream`、`/agent/stream`
   - `成本统计`：记录 token 估算、耗时、成功率、调用模式
 - Agent 返回的不只是文本，还支持 **结构化店铺卡片**，前端可直接渲染并跳转详情页。
@@ -32,7 +31,10 @@
 - Spring Boot 3.4.13
 - Spring MVC
 - MyBatis-Plus 3.5.9
+- Spring JDBC / JdbcTemplate
 - MySQL 8
+- PostgreSQL + pgvector
+- Flyway
 - Redis
 - Redisson
 - Hutool
@@ -49,6 +51,7 @@
 - Spring AI 1.1.5
 - LangChain4j 1.13.1
 - DashScope / Qwen Compatible API
+- OpenAI-compatible Embedding API
 - SSE (`SseEmitter`)
 
 ---
@@ -171,31 +174,19 @@ Redis 还承担了用户会话存储：
 
 ### 3.5 AI 工程化增强
 
-- `RAG`：轻量知识库构建与检索
+- `RAG`：店铺业务数据构建 `ai_knowledge_chunk` 向量知识库，支持 pgvector 相似度检索和轻量重排
+- `Embedding`：通过兼容 `/embeddings` 协议的 API 生成文本向量，向量维度与 pgvector 表结构保持一致
+- `Flyway`：独立管理 pgvector 表结构、HNSW 向量索引和迁移历史
 - `流式输出`：SSE 分段返回
 - `成本统计`：记录 provider、model、chat/agent 模式、token、耗时、费用估算
 
 ---
 
-## 4. 三套 AI 实现方案
+## 4. 两套 AI 实现方案
 
-本项目保留了三种 AI Provider 方案，便于对比不同框架的实现方式，也方便面试时展示“原理理解 + 工程化能力”。
+本项目保留了两种 AI Provider 方案，聚焦 Spring AI 与 LangChain4j 两种主流 Java AI 框架的工程化实现方式。
 
-### 4.1 Native 版
-
-特点：
-
-- 原生 HTTP / OkHttp 调用模型
-- 手写 Prompt / Tool / Tool Result 回填
-- 最能体现对 Agent 底层流程的理解
-
-适合展示：
-
-- 对 Tool Calling 原理的掌握
-- 对模型请求结构的理解
-- 对 AI 编排流程的掌控
-
-### 4.2 Spring AI 版
+### 4.1 Spring AI 版
 
 特点：
 
@@ -208,7 +199,7 @@ Redis 还承担了用户会话存储：
 - Spring 生态下的 AI 应用开发
 - 企业 Java 后端工程化接入 AI 的方式
 
-### 4.3 LangChain4j 版
+### 4.2 LangChain4j 版
 
 特点：
 
@@ -221,19 +212,18 @@ Redis 还承担了用户会话存储：
 - Java Agent 应用开发能力
 - LLM Tool / Memory / Streaming 的框架化使用
 
-### 4.4 当前切换方式
+### 4.3 当前切换方式
 
 通过配置切换当前启用的 provider：
 
 ```yaml
 ai:
   provider:
-    type: native
+    type: spring-ai
 ```
 
 可选值：
 
-- `native`
 - `spring-ai`
 - `langchain4j`
 
@@ -258,7 +248,6 @@ hm-dianping
 │       ├── reply
 │       ├── tool
 │       ├── provider
-│       │   ├── nativeprovider
 │       │   ├── springai
 │       │   └── langchain4j
 │       ├── rag
@@ -278,7 +267,7 @@ hm-dianping
 
 1. `AiController` 作为统一入口。
 2. `IAiService` 作为统一服务接口。
-3. `AbstractAiProviderService` 作为三套 provider 的共享编排层。
+3. `AbstractAiProviderService` 作为两套 provider 的共享编排层。
 4. `conversation / prompt / intent / tool / rag / stream / usage` 负责增强模型的业务能力。
 5. 不把 AI 理解成单个接口，而是理解成一条“消息 -> 意图 -> prompt -> 工具 -> 结果 -> 历史 -> 观测”的完整链路。
 
@@ -312,17 +301,22 @@ hm-dianping
 
 当前项目实现的是一套轻量版 RAG：
 
-- 知识表：`tb_ai_knowledge`
+- 知识表：PostgreSQL/pgvector 中的 `ai_knowledge_chunk`
 - 来源：店铺、店铺类型、优惠券等业务数据
-- 向量化：本地向量器 `LocalVectorizer`
-- 检索：向量相似度 + 关键词重叠混合评分
+- 表结构：通过 Flyway 脚本 `db/migration/pgvector/V1__init_ai_knowledge_chunk.sql` 初始化
+- 数据访问：`PgVectorKnowledgeRepository` 使用 pgvector 专用 `JdbcTemplate`
+- 向量化：`CompatibleEmbeddingClient` 调用兼容 `/embeddings` 协议的 Embedding API，默认模型为 `text-embedding-v4`
+- 检索：pgvector 余弦距离召回 `candidateK` 条候选，再按 `85%` 向量分 + `15%` 字面重叠分重排，最终返回 `topK`
+- 使用方式：普通聊天和 Agent 聊天都会在构建 system prompt 时自动追加 RAG 上下文
 
-支持接口：
+管理/调试接口：
 
 ```http
 POST /ai/rag/rebuild
 GET /ai/rag/search?query=推荐附近火锅店&topK=3
 ```
+
+其中 `/rag/rebuild` 用于重建知识库，`/rag/search` 用于查看检索命中和分数，属于管理或开发调试能力，不建议直接作为普通用户端功能暴露。
 
 ### 7.2 流式输出
 
@@ -338,7 +332,6 @@ POST /ai/agent/stream
 - 公共层 SSE 事件封装
 - `start / delta / done / error` 事件协议
 - Spring AI / LangChain4j 真流式支持
-- Native 伪流式兜底
 
 ### 7.3 成本统计
 
@@ -370,6 +363,7 @@ GET /ai/usage/recent?limit=10
 - JDK 17
 - Maven 3.8+
 - MySQL 8+
+- PostgreSQL + pgvector
 - Redis 6+
 
 ### 8.2 数据库准备
@@ -403,6 +397,16 @@ spring:
 
 ai:
   api-key: ${AI_API_KEY:}
+  embedding:
+    base-url: ${AI_EMBEDDING_BASE_URL:${ai.compatible-base-url}}
+    api-key: ${AI_EMBEDDING_API_KEY:${ai.api-key}}
+    model: ${AI_EMBEDDING_MODEL:text-embedding-v4}
+    dimensions: ${AI_EMBEDDING_DIMENSIONS:1536}
+  rag:
+    pgvector:
+      url: ${PGVECTOR_URL:jdbc:postgresql://127.0.0.1:5432/lightnote_rag}
+      username: ${PGVECTOR_USERNAME:lightnote}
+      password: ${PGVECTOR_PASSWORD:lightnote}
 ```
 
 ### 8.4 启动项目
@@ -485,67 +489,6 @@ data: {"type":"done","text":"...","data":{...}}
 
 ---
 
-## 10. 面试可讲亮点
-
-如果把这个项目用于面试，推荐重点讲这几类内容：
-
-### 10.1 Java 后端能力
-
-- Spring Boot 3 升级
-- MyBatis-Plus 数据访问
-- Redis 缓存、Geo、回补机制
-- WebSocket 私聊
-- 业务模块拆分与服务封装
-
-### 10.2 AI 能力
-
-- 手写 Native Agent 编排
-- Spring AI 版实现
-- LangChain4j 版实现
-- Tool Calling
-- RAG
-- SSE 流式输出
-- 成本统计
-
-### 10.3 工程问题与修复经验
-
-项目开发过程中重点解决过的问题包括：
-
-- 历史消息上下文污染
-- Agent 卡片刷新后丢失
-- 类型词查询不到店铺
-- 距离过滤误杀全部结果
-- Redis 与数据库不一致时的查询回补
-- 前后端联调时请求路径 / 流式消费问题
-
----
-
-## 11. 后续可升级方向
-
-当前项目已经具备较完整的 AI 应用形态，后续仍可继续升级：
-
-- 安全收口：密钥、密码、鉴权边界
-- 会话管理：多会话、会话标题、会话归档
-- 向量库升级：`pgvector / Milvus / ES Vector`
-- 工具编排升级：失败降级、重试、推荐理由
-- 可观测性：调用统计看板、错误率、成本趋势
-- 私聊 + AI 联动：聊天中 `@AI` 推荐店铺
-
----
-
-## 12. 说明
-
-本项目当前保留了较完整的 AI 实验与演进轨迹，因此仓库里可能同时存在：
-
-- Native 原生实现
-- Spring AI 实现
-- LangChain4j 实现
-- 文档与重构草稿
-
-这对于学习和面试展示是优点，但如果要继续工程化，可以进一步整理目录与配置边界。
-
----
-
-## 13. License
+## 10. License
 
 仅用于学习、交流与个人项目展示。
