@@ -143,11 +143,23 @@ public class AiRagService {
     public Result searchKnowledge(String query, Integer topK) {
         try {
             ensureKnowledgeBase();
-            return Result.ok(searchKnowledgeInternal(query, topK == null ? aiFeatureProperties.getRag().getTopK() : topK));
+            return Result.ok(searchKnowledgeHits(query, topK == null ? aiFeatureProperties.getRag().getTopK() : topK));
         } catch (Exception e) {
             log.error("RAG知识库搜索失败", e);
             return Result.fail("RAG知识库搜索失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 返回结构化检索命中，供 Spring AI Advisor、LangChain4j Retriever 或 API 复用。
+     *
+     * @param query 查询文本
+     * @param topK 返回数量
+     * @return 结构化命中列表
+     */
+    public List<Map<String, Object>> searchKnowledgeHits(String query, int topK) throws Exception {
+        ensureKnowledgeBase();
+        return searchKnowledgeInternal(query, topK);
     }
 
     /**

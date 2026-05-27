@@ -50,7 +50,7 @@ public class AiStreamService {
                     sendError(emitter, e.getMessage());
                 } catch (Exception ignored) {
                 }
-                emitter.completeWithError(e);
+                emitter.complete();
             }
         }, executorService);
         return emitter;
@@ -104,7 +104,7 @@ public class AiStreamService {
                 sendError(emitter, e.getMessage());
             } catch (Exception ignored) {
             }
-            emitter.completeWithError(e);
+            emitter.complete();
         }
     }
 

@@ -115,6 +115,7 @@ public class AiConversationService {
     public List<AiMessageDTO> getHistoryMessages(Long userId, int maxHistoryMessages) {
         LambdaQueryWrapper<AiMessage> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AiMessage::getUserId, userId)
+                .in(AiMessage::getRole, "user", "assistant")
                 .orderByDesc(AiMessage::getCreateTime)
                 .last("limit " + maxHistoryMessages);
         List<AiMessage> messages = aiMessageMapper.selectList(wrapper);

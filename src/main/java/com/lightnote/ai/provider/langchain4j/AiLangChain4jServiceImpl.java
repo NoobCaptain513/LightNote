@@ -14,6 +14,9 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.RetrievalAugmentor;
+import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
@@ -21,6 +24,7 @@ import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -30,7 +34,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -47,10 +50,17 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
     @Value("${ai.compatible-base-url:https://dashscope.aliyuncs.com/compatible-mode}")
     private String compatibleBaseUrl;
 
+    @Resource
+    private LangChain4jPersistentChatMemoryStore langChain4jMemoryStore;
+
+    @Resource
+    private LangChain4jRagContentRetriever langChain4jRagContentRetriever;
+
     private ChatModel chatModel;
     private LangChainAssistant chatAssistant;
     private StreamingLangChainAssistant streamingChatAssistant;
     private OpenAiStreamingChatModel streamingChatModel;
+    private RetrievalAugmentor retrievalAugmentor;
     private final ConcurrentMap<Object, ChatMemory> chatMemories = new ConcurrentHashMap<>();
 
     /**
@@ -72,14 +82,24 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                 .modelName(model)
                 .timeout(Duration.ofSeconds(60))
                 .build();
+        this.retrievalAugmentor = DefaultRetrievalAugmentor.builder()
+                .contentRetriever(langChain4jRagContentRetriever)
+                .contentInjector(DefaultContentInjector.builder()
+                        .metadataKeysToInclude(List.of("title", "sourceType", "sourceId", "score"))
+                        .build())
+                .build();
 
         this.chatAssistant = AiServices.builder(LangChainAssistant.class)
                 .chatModel(chatModel)
                 .chatMemoryProvider(this::getOrCreateMemory)
+                .retrievalAugmentor(retrievalAugmentor)
+                .storeRetrievedContentInChatMemory(false)
                 .build();
         this.streamingChatAssistant = AiServices.builder(StreamingLangChainAssistant.class)
                 .streamingChatModel(streamingChatModel)
                 .chatMemoryProvider(this::getOrCreateMemory)
+                .retrievalAugmentor(retrievalAugmentor)
+                .storeRetrievedContentInChatMemory(false)
                 .build();
     }
 
@@ -101,9 +121,9 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
 
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
-        String systemPrompt = buildChatSystemPrompt(recentMessages);
+        String systemPrompt = buildChatBaseSystemPrompt();
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
-        String memoryId = seedHistoryMemory("lc4j-chat", historyWithoutLastUser(recentMessages));
+        String memoryId = prepareMemory("chat", userId, historyWithoutLastUser(recentMessages));
 
         try {
             String content = chatAssistant.chat(memoryId, systemPrompt, lastMessage.getContent());
@@ -138,9 +158,9 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
 
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
-        String systemPrompt = buildChatSystemPrompt(recentMessages);
+        String systemPrompt = buildChatBaseSystemPrompt();
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
-        String memoryId = seedHistoryMemory("lc4j-chat-stream", historyWithoutLastUser(recentMessages));
+        String memoryId = prepareMemory("chat", userId, historyWithoutLastUser(recentMessages));
         long startTime = System.currentTimeMillis();
 
         return aiStreamService.stream(emitter -> {
@@ -165,7 +185,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                             aiStreamService.sendError(emitter, error.getMessage());
                         } catch (Exception ignored) {
                         }
-                        emitter.completeWithError(error);
+                        emitter.complete();
                     })
                     .onCompleteResponse(response -> {
                         String finalText = safeAssistantReply(contentBuilder.toString());
@@ -202,7 +222,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
-        String systemPrompt = buildAgentSystemPrompt(intent, recentMessages);
+        String systemPrompt = buildAgentBaseSystemPrompt(intent);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
         LangChainAssistant agentAssistant = AiServices.builder(LangChainAssistant.class)
@@ -210,11 +230,12 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                 .chatMemoryProvider(this::getOrCreateMemory)
                 .tools(new LangChainShopTools(intent, collectedShopMap))
                 .build();
-        String memoryId = seedHistoryMemory("lc4j-agent", historyWithoutLastUser(recentMessages));
+        String memoryId = prepareMemory("agent", userId, historyWithoutLastUser(recentMessages));
 
         try {
             String content = agentAssistant.chat(memoryId, systemPrompt, lastMessage.getContent());
             String finalText = safeAssistantReply(content);
+            ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
             List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
             if (intent.isNeedVoucher()) {
                 shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -250,7 +271,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
-        String systemPrompt = buildAgentSystemPrompt(intent, recentMessages);
+        String systemPrompt = buildAgentBaseSystemPrompt(intent);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
         StreamingLangChainAssistant agentAssistant = AiServices.builder(StreamingLangChainAssistant.class)
@@ -258,7 +279,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                 .chatMemoryProvider(this::getOrCreateMemory)
                 .tools(new LangChainShopTools(intent, collectedShopMap))
                 .build();
-        String memoryId = seedHistoryMemory("lc4j-agent-stream", historyWithoutLastUser(recentMessages));
+        String memoryId = prepareMemory("agent", userId, historyWithoutLastUser(recentMessages));
         long startTime = System.currentTimeMillis();
 
         return aiStreamService.stream(emitter -> {
@@ -283,10 +304,11 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                             aiStreamService.sendError(emitter, error.getMessage());
                         } catch (Exception ignored) {
                         }
-                        emitter.completeWithError(error);
+                        emitter.complete();
                     })
                     .onCompleteResponse(response -> {
                         String finalText = safeAssistantReply(contentBuilder.toString());
+                        ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
                         List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
                         if (intent.isNeedVoucher()) {
                             shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -315,20 +337,29 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
     private ChatMemory getOrCreateMemory(Object memoryId) {
         return chatMemories.computeIfAbsent(
                 memoryId,
-                key -> MessageWindowChatMemory.builder().maxMessages(MAX_REQUEST_MESSAGES + 4).build()
+                key -> MessageWindowChatMemory.builder()
+                        .id(key)
+                        .maxMessages(MAX_REQUEST_MESSAGES + 4)
+                        .chatMemoryStore(langChain4jMemoryStore)
+                        .alwaysKeepSystemMessageFirst(true)
+                        .build()
         );
     }
 
     /**
-     * 填充历史记录到聊天内存。
-     * 此方法用于将历史记录添加到聊天内存中。
-     * @param prefix 聊天内存前缀。
+     * 准备用户维度的持久化聊天内存。
+     * 首次使用时会用前端传入的历史消息做一次兼容性填充。
+     * @param scope 聊天内存范围，区分 chat / agent。
+     * @param userId 当前用户 ID。
      * @param history 历史记录列表。
      * @return 聊天内存对象的唯一标识符。
      */
-    private String seedHistoryMemory(String prefix, List<AiMessageDTO> history) {
-        String memoryId = prefix + ":" + UUID.randomUUID();
+    private String prepareMemory(String scope, Long userId, List<AiMessageDTO> history) {
+        String memoryId = "lc4j-" + scope + ":" + userId;
         ChatMemory memory = getOrCreateMemory(memoryId);
+        if (!memory.messages().isEmpty()) {
+            return memoryId;
+        }
         if (history != null) {
             for (AiMessageDTO message : history) {
                 if ("assistant".equals(message.getRole())) {
@@ -339,6 +370,50 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
             }
         }
         return memoryId;
+    }
+
+    private void ensureShopCardsCollected(AiMessageDTO lastMessage,
+                                          AgentIntent intent,
+                                          Map<Long, AgentReply.ShopCard> collectedShopMap) {
+        if (collectedShopMap == null || !collectedShopMap.isEmpty()) {
+            return;
+        }
+        String keyword = lastMessage == null ? "" : lastMessage.getContent();
+        shopAgentToolExecutor.searchShop(keyword, null, null, null, intent, collectedShopMap);
+        if (!collectedShopMap.isEmpty()) {
+            return;
+        }
+
+        try {
+            List<Map<String, Object>> hits = aiRagService.searchKnowledgeHits(keyword, 5);
+            for (Map<String, Object> hit : hits) {
+                if (!"shop".equals(String.valueOf(hit.get("sourceType")))) {
+                    continue;
+                }
+                Long shopId = readLong(hit.get("sourceId"));
+                if (shopId == null) {
+                    continue;
+                }
+                shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);
+                if (collectedShopMap.size() >= 5) {
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Long readLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.trim().isEmpty()) {
+            try {
+                return Long.valueOf(text.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return null;
     }
 
     /**

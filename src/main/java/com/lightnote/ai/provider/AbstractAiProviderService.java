@@ -191,23 +191,12 @@ public abstract class AbstractAiProviderService implements IAiService {
     }
 
     /**
-     * 解析排序字段，根据代理意图进行调整。
-     * @param sortBy 原始排序字段。
-     * @param intent 代理意图。
-     * @return 解析后的排序字段字符串。
-     */
-    protected String resolveSortBy(String sortBy, AgentIntent intent) {
-        return intentAnalyzer.resolveSortBy(sortBy, intent);
-    }
-
-    /**
      * 构建聊天系统提示，包含RAG上下文。
      * @param recentMessages 最近的AI消息列表。
      * @return 包含RAG上下文的聊天系统提示字符串。
      */
     protected String buildChatSystemPrompt(List<AiMessageDTO> recentMessages) {
-        String basePrompt = promptService.getDefaultSystemPrompt();
-        return promptService.appendRagContext(basePrompt, aiRagService.buildContext(extractLastUserText(recentMessages)));
+        return promptService.appendRagContext(buildChatBaseSystemPrompt(), aiRagService.buildContext(extractLastUserText(recentMessages)));
     }
 
     /**
@@ -217,16 +206,26 @@ public abstract class AbstractAiProviderService implements IAiService {
      * @return 包含RAG上下文的代理系统提示字符串。
      */
     protected String buildAgentSystemPrompt(AgentIntent intent, List<AiMessageDTO> recentMessages) {
-        String basePrompt = promptService.buildAgentSystemPrompt(intent);
-        return promptService.appendRagContext(basePrompt, aiRagService.buildContext(extractLastUserText(recentMessages)));
+        return promptService.appendRagContext(buildAgentBaseSystemPrompt(intent), aiRagService.buildContext(extractLastUserText(recentMessages)));
     }
 
     /**
-     * 获取默认系统提示。
-     * @return 默认系统提示字符串。
+     * 构建不含 RAG 上下文的普通聊天系统提示，供框架原生 RAG 扩展点使用。
+     *
+     * @return 基础聊天系统提示
      */
-    protected String getDefaultSystemPrompt() {
+    protected String buildChatBaseSystemPrompt() {
         return promptService.getDefaultSystemPrompt();
+    }
+
+    /**
+     * 构建不含 RAG 上下文的 Agent 系统提示，供框架原生 RAG 扩展点使用。
+     *
+     * @param intent 智能体意图
+     * @return 基础 Agent 系统提示
+     */
+    protected String buildAgentBaseSystemPrompt(AgentIntent intent) {
+        return promptService.buildAgentSystemPrompt(intent);
     }
 
     /**

@@ -190,29 +190,52 @@ Redis 还承担了用户会话存储：
 
 特点：
 
-- 使用 `ChatClient`
-- 可结合 `Advisor`、`Memory`、`@Tool`
-- 更贴近 Spring Boot 工程整合风格
+- 使用 `ChatClient` 作为统一调用入口。
+- 使用 `SpringAiSafetyAdvisor` 做请求级安全约束增强。
+- 普通聊天使用 `SpringAiRagAdvisor` 在 Advisor 链路中注入 RAG 上下文，而不是在 provider 里硬拼 prompt。
+- Agent 聊天保持工具优先，不挂 RAG Advisor，避免模型只基于知识库文本回答而不产生店铺卡片。
+- 使用 `MessageChatMemoryAdvisor` 管理本轮请求历史。
+- 使用 `SpringAiShopToolFactory` 生成带 `@Tool` 方法的工具对象，工具业务逻辑仍由 Spring Bean 注入和复用。
+- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会用工具搜索和 RAG `sourceId` 回查兜底补齐 shopcard。
+- 更贴近 Spring Boot 企业后端的工程整合风格。
 
 适合展示：
 
 - Spring 生态下的 AI 应用开发
 - 企业 Java 后端工程化接入 AI 的方式
+- Advisor 链、Spring Bean 工具、请求级增强、可观测性扩展点
 
 ### 4.2 LangChain4j 版
 
 特点：
 
-- 使用 `AiServices`
-- 支持更自然的 Tool Calling / Memory / TokenStream 表达
-- 更贴近 Java AI 应用开发社区风格
+- 使用 `AiServices` 声明式定义 Assistant。
+- 使用 `@SystemMessage`、`@UserMessage`、`@MemoryId` 表达对话接口。
+- 使用 `LangChain4jPersistentChatMemoryStore` 接入持久化记忆，按用户区分 `lc4j_chat` / `lc4j_agent` 两类记忆。
+- 普通聊天使用 `RetrievalAugmentor` + `LangChain4jRagContentRetriever` 接入 RAG，而不是手动拼接 system prompt。
+- Agent 聊天保持工具优先，不挂 `RetrievalAugmentor`，避免 RAG 内容绕过工具调用导致前端没有 shopcard。
+- Tool 直接返回 `List<Map<String, Object>>` / `Map<String, Object>` 等结构化结果，体现 LangChain4j typed tools 风格。
+- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会用工具搜索和 RAG `sourceId` 回查兜底补齐 shopcard。
+- 更贴近 Java Agent / Assistant 应用开发风格。
 
 适合展示：
 
 - Java Agent 应用开发能力
 - LLM Tool / Memory / Streaming 的框架化使用
+- 声明式 AI Service、持久化 Memory、RetrievalAugmentor、typed tools
 
-### 4.3 当前切换方式
+### 4.3 差异化设计对照
+
+| 能力 | Spring AI 版 | LangChain4j 版 |
+| --- | --- | --- |
+| 调用入口 | `ChatClient` fluent API | `AiServices` 声明式 Assistant |
+| RAG 接入 | 普通 chat 使用 `SpringAiRagAdvisor`；agent 只在 shopcard 兜底时使用 RAG sourceId | 普通 chat 使用 `RetrievalAugmentor` + `ContentRetriever`；agent 只在 shopcard 兜底时使用 RAG sourceId |
+| 记忆 | `MessageChatMemoryAdvisor` 使用请求级窗口记忆 | `ChatMemoryStore` 持久化用户长期记忆 |
+| 工具 | Spring 管理的 `@Tool` 工具对象，工具输出序列化为 JSON | LangChain4j typed tools，直接返回结构化 Java 对象 |
+| Agent 卡片 | 工具调用收集 `AgentReply.shops`，缺失时后端兜底补齐 | 工具调用收集 `AgentReply.shops`，缺失时后端兜底补齐 |
+| 定位 | 企业 Spring Boot AI 接入 | Agent / Assistant 应用编排 |
+
+### 4.4 当前切换方式
 
 通过配置切换当前启用的 provider：
 
@@ -267,9 +290,10 @@ hm-dianping
 
 1. `AiController` 作为统一入口。
 2. `IAiService` 作为统一服务接口。
-3. `AbstractAiProviderService` 作为两套 provider 的共享编排层。
+3. `AbstractAiProviderService` 只保留用户校验、历史保存、意图识别、usage 记录等公共业务编排。
 4. `conversation / prompt / intent / tool / rag / stream / usage` 负责增强模型的业务能力。
-5. 不把 AI 理解成单个接口，而是理解成一条“消息 -> 意图 -> prompt -> 工具 -> 结果 -> 历史 -> 观测”的完整链路。
+5. Spring AI / LangChain4j 在普通 chat 内使用框架原生扩展点接入 RAG，在 agent 内保持工具优先。
+6. 不把 AI 理解成单个接口，而是理解成一条“消息 -> 意图 -> prompt -> 工具 -> 结果 -> 历史 -> 观测”的完整链路。
 
 ### 6.1 Agent 调用链
 
@@ -284,14 +308,13 @@ hm-dianping
 3. 裁剪历史消息
 4. 识别意图：优惠券 / 评分 / 距离
 5. 拼接 Agent Prompt
-6. 调用 RAG 检索知识片段
-7. provider 调模型
-8. 模型决定是否调用工具
-9. 工具查询真实业务数据
-10. 汇总为结构化店铺卡片
-11. 返回自然语言 + 卡片结构
-12. 落库消息历史
-13. 记录 usage 成本日志
+6. provider 调模型，并要求模型优先调用店铺搜索、详情、优惠券工具
+7. 工具查询真实业务数据，并把结果合并到 `collectedShopMap`
+8. 如果模型没有调用工具，后端用用户原句兜底搜索；仍没有卡片时，再用 RAG 命中的 `sourceId` 回查店铺详情
+9. 汇总为结构化店铺卡片 `AgentReply.shops`
+10. 返回自然语言 + 卡片结构
+11. 落库消息历史
+12. 记录 usage 成本日志
 
 ---
 
@@ -307,7 +330,11 @@ hm-dianping
 - 数据访问：`PgVectorKnowledgeRepository` 使用 pgvector 专用 `JdbcTemplate`
 - 向量化：`CompatibleEmbeddingClient` 调用兼容 `/embeddings` 协议的 Embedding API，默认模型为 `text-embedding-v4`
 - 检索：pgvector 余弦距离召回 `candidateK` 条候选，再按 `85%` 向量分 + `15%` 字面重叠分重排，最终返回 `topK`
-- 使用方式：普通聊天和 Agent 聊天都会在构建 system prompt 时自动追加 RAG 上下文
+- 使用方式：
+  - native provider：公共层构建 system prompt 时追加 RAG 上下文
+  - Spring AI 普通 chat：`SpringAiRagAdvisor` 在 Advisor 链中追加 RAG 上下文
+  - LangChain4j 普通 chat：`LangChain4jRagContentRetriever` 通过 `RetrievalAugmentor` 注入 RAG 内容
+  - Spring AI / LangChain4j agent：工具优先，不直接注入 RAG；当模型未产生 shopcard 时，使用 RAG 命中的 `sourceId` 回查店铺详情做兜底
 
 管理/调试接口：
 
@@ -485,6 +512,69 @@ data: {"type":"delta","content":"正在为你查找..."}
 
 event: done
 data: {"type":"done","text":"...","data":{...}}
+```
+
+### 9.4 MCP 工具服务
+
+项目提供轻量 HTTP JSON-RPC 形式的 MCP Server，用于把 LightNote 业务能力暴露给外部 AI 客户端或 Agent：
+
+```http
+GET  /mcp
+POST /mcp
+```
+
+当前支持的 MCP 方法：
+
+- `initialize`：返回服务信息与工具能力。
+- `tools/list`：列出可调用工具及 JSON Schema。
+- `tools/call`：调用具体工具。
+
+已暴露工具：
+
+- `search_shop`：按关键词、类型、商圈或地址搜索店铺，支持评分/距离排序。
+- `get_shop_detail`：查询店铺详情。
+- `get_voucher`：查询店铺优惠券。
+- `rag_search`：检索 pgvector RAG 知识库。
+- `rebuild_rag`：重建 RAG 知识库。
+
+如果要让 Codex 像使用内置工具一样发现这些工具，需要通过标准 stdio MCP Server 接入。项目提供了本地桥接脚本：
+
+```text
+mcp-bridge/lightnote-mcp-stdio.js
+```
+
+调用链路为：
+
+```text
+Codex MCP Client -> stdio MCP bridge -> LightNote /mcp -> 项目业务工具
+```
+
+Codex 配置示例：
+
+```toml
+[mcp_servers.lightnote]
+command = "D:\\develop\\NodeJs\\node.exe"
+args = ["D:\\javaproject\\LightNote\\mcp-bridge\\lightnote-mcp-stdio.js"]
+env = { LIGHTNOTE_MCP_URL = "http://localhost:8081/mcp" }
+```
+
+使用前先启动 LightNote 后端，确保 `http://localhost:8081/mcp` 可访问；然后重启 Codex 或开启新会话，Codex 会通过 `initialize` 和 `tools/list` 自动发现工具。
+
+调用示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "search_shop",
+    "arguments": {
+      "keyword": "火锅",
+      "sortBy": "score_desc"
+    }
+  }
+}
 ```
 
 ---
