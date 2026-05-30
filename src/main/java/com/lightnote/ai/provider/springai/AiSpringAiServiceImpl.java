@@ -2,6 +2,7 @@ package com.lightnote.ai.provider.springai;
 
 import com.lightnote.ai.model.AgentIntent;
 import com.lightnote.ai.provider.AbstractAiProviderService;
+import com.lightnote.ai.rag.AgentRagCandidateService.AgentRagCandidates;
 import com.lightnote.dto.AiAgentRequest;
 import com.lightnote.dto.AiChatRequest;
 import com.lightnote.dto.AiMessageDTO;
@@ -24,6 +25,7 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -205,7 +207,8 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
-        String systemPrompt = buildAgentBaseSystemPrompt(intent);
+        AgentRagCandidates ragCandidates = agentRagCandidateService.preloadShopCandidates(lastMessage.getContent(), intent);
+        String systemPrompt = buildAgentSystemPromptWithCandidates(intent, ragCandidates);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
 
         try {
@@ -218,7 +221,7 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                     .content();
 
             String finalText = safeAssistantReply(content);
-            ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
+            ensureShopCardsCollected(lastMessage, intent, collectedShopMap, ragCandidates);
             List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
             if (intent.isNeedVoucher()) {
                 shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -253,7 +256,8 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         AgentIntent intent = analyzeIntent(recentMessages, request);
         //工具结果收集容器
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
-        String systemPrompt = buildAgentBaseSystemPrompt(intent);
+        AgentRagCandidates ragCandidates = agentRagCandidateService.preloadShopCandidates(lastMessage.getContent(), intent);
+        String systemPrompt = buildAgentSystemPromptWithCandidates(intent, ragCandidates);
         String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         long startTime = System.currentTimeMillis();
 
@@ -292,7 +296,7 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
                             return;
                         }
                         String finalText = safeAssistantReply(contentBuilder.toString());
-                        ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
+                        ensureShopCardsCollected(lastMessage, intent, collectedShopMap, ragCandidates);
                         List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
                         if (intent.isNeedVoucher()) {
                             shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -310,6 +314,12 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         });
     }
 
+    /**
+     * 组装普通聊天使用的 Spring AI Advisor 链。
+     *
+     * @param recentMessages 当前请求携带的最近消息
+     * @return 安全增强、RAG 增强和窗口记忆 Advisor
+     */
     private List<Advisor> springAiChatAdvisors(List<AiMessageDTO> recentMessages) {
         return List.of(
                 springAiSafetyAdvisor,
@@ -318,6 +328,12 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         );
     }
 
+    /**
+     * 组装 Agent 聊天使用的 Spring AI Advisor 链。
+     *
+     * @param recentMessages 当前请求携带的最近消息
+     * @return 安全增强和窗口记忆 Advisor
+     */
     private List<Advisor> springAiAgentAdvisors(List<AiMessageDTO> recentMessages) {
         return List.of(
                 springAiSafetyAdvisor,
@@ -325,48 +341,43 @@ public class AiSpringAiServiceImpl extends AbstractAiProviderService {
         );
     }
 
+    /**
+     * 构建带 RAG 候选店铺摘要的 Agent system prompt。
+     *
+     * @param intent 当前 Agent 意图
+     * @param ragCandidates 前置 RAG 候选结果
+     * @return Agent system prompt
+     */
+    private String buildAgentSystemPromptWithCandidates(AgentIntent intent, AgentRagCandidates ragCandidates) {
+        String systemPrompt = buildAgentBaseSystemPrompt(intent);
+        if (ragCandidates == null || !StringUtils.hasText(ragCandidates.prompt())) {
+            return systemPrompt;
+        }
+        return systemPrompt + ragCandidates.prompt();
+    }
+
+    /**
+     * 确保 Agent 回复中有可渲染的店铺卡片。
+     * 如果模型没有调用工具，会优先合并前置 RAG 候选卡片，再用用户原句触发工具搜索兜底。
+     *
+     * @param lastMessage 当前用户最后一条消息
+     * @param intent 当前 Agent 意图
+     * @param collectedShopMap 本轮已收集的店铺卡片
+     * @param ragCandidates 前置 RAG 候选结果
+     */
     private void ensureShopCardsCollected(AiMessageDTO lastMessage,
                                           AgentIntent intent,
-                                          Map<Long, AgentReply.ShopCard> collectedShopMap) {
+                                          Map<Long, AgentReply.ShopCard> collectedShopMap,
+                                          AgentRagCandidates ragCandidates) {
         if (collectedShopMap == null || !collectedShopMap.isEmpty()) {
+            return;
+        }
+        agentRagCandidateService.mergeCandidatesIfEmpty(collectedShopMap, ragCandidates);
+        if (!collectedShopMap.isEmpty()) {
             return;
         }
         String keyword = lastMessage == null ? "" : lastMessage.getContent();
         shopAgentToolExecutor.searchShop(keyword, null, null, null, intent, collectedShopMap);
-        if (!collectedShopMap.isEmpty()) {
-            return;
-        }
-
-        try {
-            List<Map<String, Object>> hits = aiRagService.searchKnowledgeHits(keyword, 5);
-            for (Map<String, Object> hit : hits) {
-                if (!"shop".equals(String.valueOf(hit.get("sourceType")))) {
-                    continue;
-                }
-                Long shopId = readLong(hit.get("sourceId"));
-                if (shopId == null) {
-                    continue;
-                }
-                shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);
-                if (collectedShopMap.size() >= 5) {
-                    break;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private Long readLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && !text.trim().isEmpty()) {
-            try {
-                return Long.valueOf(text.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return null;
     }
 
     /**

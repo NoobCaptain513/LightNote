@@ -19,6 +19,13 @@ public class SpringAiShopToolFactory {
     private final ShopAgentToolExecutor shopAgentToolExecutor;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 为单次 Spring AI Agent 调用创建工具对象，并共享本轮店铺卡片收集容器。
+     *
+     * @param intent 当前用户意图
+     * @param collectedShopMap 本轮工具调用收集到的店铺卡片
+     * @return 带有 Spring AI @Tool 方法的工具对象
+     */
     public SpringAiShopTools create(AgentIntent intent, Map<Long, AgentReply.ShopCard> collectedShopMap) {
         return new SpringAiShopTools(intent, collectedShopMap);
     }
@@ -32,6 +39,15 @@ public class SpringAiShopToolFactory {
             this.collectedShopMap = collectedShopMap;
         }
 
+        /**
+         * 根据关键词搜索店铺，并把结构化搜索结果序列化为 Spring AI 工具可返回的 JSON 字符串。
+         *
+         * @param keyword 搜索关键词
+         * @param sortBy 排序方式
+         * @param x 用户经度
+         * @param y 用户纬度
+         * @return 店铺搜索结果 JSON；异常时返回空数组
+         */
         @Tool(description = "根据关键词搜索店铺，支持按评分或距离排序")
         public String searchShop(
                 @ToolParam(description = "搜索关键词") String keyword,
@@ -46,6 +62,12 @@ public class SpringAiShopToolFactory {
             }
         }
 
+        /**
+         * 查询指定店铺的优惠券，并把结果序列化为 JSON 字符串返回给模型。
+         *
+         * @param shopId 店铺 ID
+         * @return 优惠券列表 JSON；异常时返回空数组
+         */
         @Tool(description = "查询指定店铺的优惠券")
         public String getVoucher(@ToolParam(description = "店铺ID") Long shopId) {
             try {
@@ -56,6 +78,12 @@ public class SpringAiShopToolFactory {
             }
         }
 
+        /**
+         * 查询指定店铺详情，并把结果序列化为 JSON 字符串返回给模型。
+         *
+         * @param shopId 店铺 ID
+         * @return 店铺详情 JSON；异常时返回空对象
+         */
         @Tool(description = "查询店铺详情")
         public String getShopDetail(@ToolParam(description = "店铺ID") Long shopId) {
             try {

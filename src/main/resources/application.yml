@@ -43,7 +43,7 @@ logging:
 
 ai:
   provider:
-    type: spring-ai
+    type: langchain4j
   api-key: sk-b0e58e9d0ea3442481f7897adc849fdf
   model: qwen-max
   compatible-base-url: https://dashscope.aliyuncs.com/compatible-mode

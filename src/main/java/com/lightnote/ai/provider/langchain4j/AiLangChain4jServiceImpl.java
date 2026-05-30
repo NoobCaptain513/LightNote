@@ -2,6 +2,7 @@ package com.lightnote.ai.provider.langchain4j;
 
 import com.lightnote.ai.model.AgentIntent;
 import com.lightnote.ai.provider.AbstractAiProviderService;
+import com.lightnote.ai.rag.AgentRagCandidateService.AgentRagCandidates;
 import com.lightnote.dto.AiAgentRequest;
 import com.lightnote.dto.AiChatRequest;
 import com.lightnote.dto.AiMessageDTO;
@@ -28,6 +29,7 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
@@ -82,6 +84,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                 .modelName(model)
                 .timeout(Duration.ofSeconds(60))
                 .build();
+
         this.retrievalAugmentor = DefaultRetrievalAugmentor.builder()
                 .contentRetriever(langChain4jRagContentRetriever)
                 .contentInjector(DefaultContentInjector.builder()
@@ -222,9 +225,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
-        String systemPrompt = buildAgentBaseSystemPrompt(intent);
-        String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
+        AgentRagCandidates ragCandidates = agentRagCandidateService.preloadShopCandidates(lastMessage.getContent(), intent);
+        String systemPrompt = buildAgentSystemPromptWithCandidates(intent, ragCandidates);
+        String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         LangChainAssistant agentAssistant = AiServices.builder(LangChainAssistant.class)
                 .chatModel(chatModel)
                 .chatMemoryProvider(this::getOrCreateMemory)
@@ -235,7 +239,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         try {
             String content = agentAssistant.chat(memoryId, systemPrompt, lastMessage.getContent());
             String finalText = safeAssistantReply(content);
-            ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
+            ensureShopCardsCollected(lastMessage, intent, collectedShopMap, ragCandidates);
             List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
             if (intent.isNeedVoucher()) {
                 shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -271,9 +275,10 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         saveLastUserMessage(userId, recentMessages);
         AiMessageDTO lastMessage = getLastMessage(recentMessages);
         AgentIntent intent = analyzeIntent(recentMessages, request);
-        String systemPrompt = buildAgentBaseSystemPrompt(intent);
-        String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         Map<Long, AgentReply.ShopCard> collectedShopMap = new LinkedHashMap<>();
+        AgentRagCandidates ragCandidates = agentRagCandidateService.preloadShopCandidates(lastMessage.getContent(), intent);
+        String systemPrompt = buildAgentSystemPromptWithCandidates(intent, ragCandidates);
+        String promptTrace = buildPromptTrace(systemPrompt, recentMessages);
         StreamingLangChainAssistant agentAssistant = AiServices.builder(StreamingLangChainAssistant.class)
                 .streamingChatModel(streamingChatModel)
                 .chatMemoryProvider(this::getOrCreateMemory)
@@ -308,7 +313,7 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
                     })
                     .onCompleteResponse(response -> {
                         String finalText = safeAssistantReply(contentBuilder.toString());
-                        ensureShopCardsCollected(lastMessage, intent, collectedShopMap);
+                        ensureShopCardsCollected(lastMessage, intent, collectedShopMap, ragCandidates);
                         List<AgentReply.ShopCard> replyShops = shopCardAssembler.toShopCardList(collectedShopMap);
                         if (intent.isNeedVoucher()) {
                             shopAgentToolService.enrichShopCardsWithVouchers(replyShops);
@@ -372,48 +377,43 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
         return memoryId;
     }
 
+    /**
+     * 构建带 RAG 候选店铺摘要的 Agent system prompt。
+     *
+     * @param intent 当前 Agent 意图
+     * @param ragCandidates 前置 RAG 候选结果
+     * @return Agent system prompt
+     */
+    private String buildAgentSystemPromptWithCandidates(AgentIntent intent, AgentRagCandidates ragCandidates) {
+        String systemPrompt = buildAgentBaseSystemPrompt(intent);
+        if (ragCandidates == null || !StringUtils.hasText(ragCandidates.prompt())) {
+            return systemPrompt;
+        }
+        return systemPrompt + ragCandidates.prompt();
+    }
+
+    /**
+     * 确保 Agent 回复中有可渲染的店铺卡片。
+     * 如果模型没有调用工具，会优先合并前置 RAG 候选卡片，再用用户原句触发工具搜索兜底。
+     *
+     * @param lastMessage 当前用户最后一条消息
+     * @param intent 当前 Agent 意图
+     * @param collectedShopMap 本轮已收集的店铺卡片
+     * @param ragCandidates 前置 RAG 候选结果
+     */
     private void ensureShopCardsCollected(AiMessageDTO lastMessage,
                                           AgentIntent intent,
-                                          Map<Long, AgentReply.ShopCard> collectedShopMap) {
+                                          Map<Long, AgentReply.ShopCard> collectedShopMap,
+                                          AgentRagCandidates ragCandidates) {
         if (collectedShopMap == null || !collectedShopMap.isEmpty()) {
+            return;
+        }
+        agentRagCandidateService.mergeCandidatesIfEmpty(collectedShopMap, ragCandidates);
+        if (!collectedShopMap.isEmpty()) {
             return;
         }
         String keyword = lastMessage == null ? "" : lastMessage.getContent();
         shopAgentToolExecutor.searchShop(keyword, null, null, null, intent, collectedShopMap);
-        if (!collectedShopMap.isEmpty()) {
-            return;
-        }
-
-        try {
-            List<Map<String, Object>> hits = aiRagService.searchKnowledgeHits(keyword, 5);
-            for (Map<String, Object> hit : hits) {
-                if (!"shop".equals(String.valueOf(hit.get("sourceType")))) {
-                    continue;
-                }
-                Long shopId = readLong(hit.get("sourceId"));
-                if (shopId == null) {
-                    continue;
-                }
-                shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);
-                if (collectedShopMap.size() >= 5) {
-                    break;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private Long readLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && !text.trim().isEmpty()) {
-            try {
-                return Long.valueOf(text.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return null;
     }
 
     /**
@@ -421,6 +421,14 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
      * 此接口定义了与LangChain4j聊天模型交互的方法。
      */
     private interface LangChainAssistant {
+        /**
+         * 执行非流式 LangChain4j Assistant 对话。
+         *
+         * @param memoryId 用户维度的记忆 ID
+         * @param systemPrompt 本次对话系统提示
+         * @param userMessage 当前用户输入
+         * @return 模型回复文本
+         */
         @SystemMessage("{{systemPrompt}}")
         String chat(@MemoryId Object memoryId,
                     @V("systemPrompt") String systemPrompt,
@@ -432,6 +440,14 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
      * 此接口定义了与LangChain4j流式聊天模型交互的方法。
      */
     private interface StreamingLangChainAssistant {
+        /**
+         * 执行流式 LangChain4j Assistant 对话。
+         *
+         * @param memoryId 用户维度的记忆 ID
+         * @param systemPrompt 本次对话系统提示
+         * @param userMessage 当前用户输入
+         * @return LangChain4j TokenStream
+         */
         @SystemMessage("{{systemPrompt}}")
         TokenStream chat(@MemoryId Object memoryId,
                          @V("systemPrompt") String systemPrompt,
@@ -451,6 +467,15 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
             this.collectedShopMap = collectedShopMap;
         }
 
+        /**
+         * 根据关键词搜索店铺，并以 LangChain4j typed tool 的结构化对象形式返回。
+         *
+         * @param keyword 搜索关键词
+         * @param sortBy 排序方式
+         * @param x 用户经度
+         * @param y 用户纬度
+         * @return 店铺搜索结果列表
+         */
         @Tool("根据关键词搜索店铺，支持按评分或距离排序")
         public List<Map<String, Object>> searchShop(
                 @P("搜索关键词") String keyword,
@@ -460,11 +485,23 @@ public class AiLangChain4jServiceImpl extends AbstractAiProviderService {
             return shopAgentToolExecutor.searchShop(keyword, sortBy, x, y, intent, collectedShopMap);
         }
 
+        /**
+         * 查询指定店铺的优惠券，并以结构化列表返回给 LangChain4j。
+         *
+         * @param shopId 店铺 ID
+         * @return 优惠券列表
+         */
         @Tool("查询指定店铺的优惠券")
         public List<Map<String, Object>> getVoucher(@P("店铺ID") Long shopId) {
             return shopAgentToolExecutor.getVoucher(shopId, collectedShopMap);
         }
 
+        /**
+         * 查询指定店铺详情，并以结构化对象返回给 LangChain4j。
+         *
+         * @param shopId 店铺 ID
+         * @return 店铺详情
+         */
         @Tool("查询店铺详情")
         public Map<String, Object> getShopDetail(@P("店铺ID") Long shopId) {
             return shopAgentToolExecutor.getShopDetail(shopId, collectedShopMap);

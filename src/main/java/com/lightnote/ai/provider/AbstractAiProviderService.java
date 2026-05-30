@@ -5,6 +5,7 @@ import com.lightnote.ai.conversation.AiConversationService;
 import com.lightnote.ai.intent.AgentIntentAnalyzer;
 import com.lightnote.ai.model.AgentIntent;
 import com.lightnote.ai.prompt.AiPromptService;
+import com.lightnote.ai.rag.AgentRagCandidateService;
 import com.lightnote.ai.rag.AiRagService;
 import com.lightnote.ai.reply.ShopCardAssembler;
 import com.lightnote.ai.stream.AiStreamService;
@@ -47,6 +48,9 @@ public abstract class AbstractAiProviderService implements IAiService {
 
     @Resource
     protected AiRagService aiRagService;
+
+    @Resource
+    protected AgentRagCandidateService agentRagCandidateService;
 
     @Resource
     protected AiStreamService aiStreamService;

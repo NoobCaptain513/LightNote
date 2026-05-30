@@ -193,10 +193,10 @@ Redis 还承担了用户会话存储：
 - 使用 `ChatClient` 作为统一调用入口。
 - 使用 `SpringAiSafetyAdvisor` 做请求级安全约束增强。
 - 普通聊天使用 `SpringAiRagAdvisor` 在 Advisor 链路中注入 RAG 上下文，而不是在 provider 里硬拼 prompt。
-- Agent 聊天保持工具优先，不挂 RAG Advisor，避免模型只基于知识库文本回答而不产生店铺卡片。
+- Agent 聊天保持工具优先，不挂 RAG Advisor；调模型前会用 RAG `sourceId` 召回候选店铺，并通过业务详情接口回查成真实候选数据。
 - 使用 `MessageChatMemoryAdvisor` 管理本轮请求历史。
 - 使用 `SpringAiShopToolFactory` 生成带 `@Tool` 方法的工具对象，工具业务逻辑仍由 Spring Bean 注入和复用。
-- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会用工具搜索和 RAG `sourceId` 回查兜底补齐 shopcard。
+- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会优先合并前置 RAG 候选卡片，再用工具搜索兜底补齐 shopcard。
 - 更贴近 Spring Boot 企业后端的工程整合风格。
 
 适合展示：
@@ -213,9 +213,9 @@ Redis 还承担了用户会话存储：
 - 使用 `@SystemMessage`、`@UserMessage`、`@MemoryId` 表达对话接口。
 - 使用 `LangChain4jPersistentChatMemoryStore` 接入持久化记忆，按用户区分 `lc4j_chat` / `lc4j_agent` 两类记忆。
 - 普通聊天使用 `RetrievalAugmentor` + `LangChain4jRagContentRetriever` 接入 RAG，而不是手动拼接 system prompt。
-- Agent 聊天保持工具优先，不挂 `RetrievalAugmentor`，避免 RAG 内容绕过工具调用导致前端没有 shopcard。
+- Agent 聊天保持工具优先，不挂 `RetrievalAugmentor`；调模型前会用 RAG `sourceId` 召回候选店铺，并通过业务详情接口回查成真实候选数据。
 - Tool 直接返回 `List<Map<String, Object>>` / `Map<String, Object>` 等结构化结果，体现 LangChain4j typed tools 风格。
-- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会用工具搜索和 RAG `sourceId` 回查兜底补齐 shopcard。
+- Agent 回复结束前会检查 `AgentReply.shops`，如果模型没有调用工具，会优先合并前置 RAG 候选卡片，再用工具搜索兜底补齐 shopcard。
 - 更贴近 Java Agent / Assistant 应用开发风格。
 
 适合展示：
@@ -229,7 +229,7 @@ Redis 还承担了用户会话存储：
 | 能力 | Spring AI 版 | LangChain4j 版 |
 | --- | --- | --- |
 | 调用入口 | `ChatClient` fluent API | `AiServices` 声明式 Assistant |
-| RAG 接入 | 普通 chat 使用 `SpringAiRagAdvisor`；agent 只在 shopcard 兜底时使用 RAG sourceId | 普通 chat 使用 `RetrievalAugmentor` + `ContentRetriever`；agent 只在 shopcard 兜底时使用 RAG sourceId |
+| RAG 接入 | 普通 chat 使用 `SpringAiRagAdvisor`；agent 前置使用 RAG sourceId 召回真实店铺候选，shopcard 缺失时合并候选兜底 | 普通 chat 使用 `RetrievalAugmentor` + `ContentRetriever`；agent 前置使用 RAG sourceId 召回真实店铺候选，shopcard 缺失时合并候选兜底 |
 | 记忆 | `MessageChatMemoryAdvisor` 使用请求级窗口记忆 | `ChatMemoryStore` 持久化用户长期记忆 |
 | 工具 | Spring 管理的 `@Tool` 工具对象，工具输出序列化为 JSON | LangChain4j typed tools，直接返回结构化 Java 对象 |
 | Agent 卡片 | 工具调用收集 `AgentReply.shops`，缺失时后端兜底补齐 | 工具调用收集 `AgentReply.shops`，缺失时后端兜底补齐 |
@@ -334,7 +334,7 @@ hm-dianping
   - native provider：公共层构建 system prompt 时追加 RAG 上下文
   - Spring AI 普通 chat：`SpringAiRagAdvisor` 在 Advisor 链中追加 RAG 上下文
   - LangChain4j 普通 chat：`LangChain4jRagContentRetriever` 通过 `RetrievalAugmentor` 注入 RAG 内容
-  - Spring AI / LangChain4j agent：工具优先，不直接注入 RAG；当模型未产生 shopcard 时，使用 RAG 命中的 `sourceId` 回查店铺详情做兜底
+  - Spring AI / LangChain4j agent：工具优先，不直接注入原始 RAG 文本；调模型前先用 RAG 命中的 `sourceId` 回查真实店铺详情，作为候选提示和 shopcard 兜底来源
 
 管理/调试接口：
 
